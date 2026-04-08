@@ -413,6 +413,32 @@ func TestSegmentedSubmitSMAnySegmentRequestedDLRRegistersPending(t *testing.T) {
 	}
 }
 
+func TestSessionMeta(t *testing.T) {
+	s := &Session{}
+	if _, ok := s.GetSessionMeta("k"); ok {
+		t.Fatalf("unexpected meta hit on empty session")
+	}
+	if len(s.SessionMeta()) != 0 {
+		t.Fatalf("expected empty snapshot")
+	}
+
+	s.SetSessionMeta("tenant", "acme")
+	s.SetSessionMeta("route", "primary")
+
+	if v, ok := s.GetSessionMeta("tenant"); !ok || v != "acme" {
+		t.Fatalf("GetSessionMeta tenant: ok=%v v=%q", ok, v)
+	}
+
+	all := s.SessionMeta()
+	if len(all) != 2 || all["route"] != "primary" {
+		t.Fatalf("SessionMeta snapshot: %v", all)
+	}
+	all["route"] = "tampered"
+	if v, _ := s.GetSessionMeta("route"); v != "primary" {
+		t.Fatalf("SessionMeta should return a copy")
+	}
+}
+
 func TestSendEnquireLinkReq(t *testing.T) {
 	cfg := newTestConfig()
 	cfg.MaxEnquireLinkRetryCount = 1

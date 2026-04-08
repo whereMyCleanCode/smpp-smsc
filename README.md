@@ -11,6 +11,7 @@ It provides server-side SMPP flow handling (bind / submit_sm / deliver_sm / enqu
 - Submit/Deliver flow with handler-based business logic
 - Segmented message reassembly with shard-based manager
 - O(1) message-to-session routing for delivery/report flows
+- Optional per-session application metadata (`SetSessionMeta` / `GetSessionMeta` / `SessionMeta`)
 - Configurable pretty/json logs (color support for local dev)
 - Full `submit_sm` mandatory field parsing passed to external handlers
 - Raw access to all `submit_sm` TLVs via `SubmitSmParams.TLVParams`
@@ -137,6 +138,7 @@ func main() {
   - Parses incoming SMPP PDUs
   - Handles bind/submit/enquire/unbind flows
   - Tracks pending requests and activity timestamps
+  - Stores optional **application metadata** (not part of SMPP): use `SetSessionMeta(key, value)` from bind handlers or any code that holds `*Session` to attach tenant IDs, product flags, auth claims, routing hints, etc. Read with `GetSessionMeta(key)` or a full copy via `SessionMeta()` (thread-safe; safe to read from other goroutines after publish). This data is never written to the wire unless your own logic sends it.
 
 - `SessionsManager`
   - Stores active sessions
@@ -161,6 +163,18 @@ func main() {
    - O(1) lookup for routing delivery-related events back to a session
 
 This design keeps hot-path routing fast and avoids stale memory buildup in long-running processes.
+
+## Session application metadata
+
+Each `*smsc.Session` can carry an internal `map[string]string` for **your** data (tenant, API key id, A/B flags, etc.). It is **not** an SMPP field: nothing is serialized to the client unless you use it in your handlers or when sending PDUs yourself.
+
+API:
+
+- `SetSessionMeta(key, value string)` — set or overwrite one entry
+- `GetSessionMeta(key string) (string, bool)` — read one entry
+- `SessionMeta() map[string]string` — copy of all entries (mutating the returned map does not affect the session)
+
+Typical use: call `SetSessionMeta` from `HandleBindTransceiver` / `HandleBindReceiver` / `HandleBindTransmitter` after you validate `system_id`, then read metadata in `HandleSubmitSM` or in code that resolves `*Session` by ID.
 
 ## Logging
 

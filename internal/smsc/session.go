@@ -32,6 +32,9 @@ type Session struct {
 
 	ID            string
 	ApplicationID string
+	// meta is arbitrary key/value metadata for application use (not part of SMPP).
+	// Use SetSessionMeta / GetSessionMeta / SessionMeta; do not mutate the map directly.
+	meta map[string]string
 	PodID         string
 	SystemID      string
 	Password      string
@@ -198,6 +201,38 @@ func (s *Session) GetApplicationID() string {
 	s.sessionMutex.RLock()
 	defer s.sessionMutex.RUnlock()
 	return s.ApplicationID
+}
+
+// SetSessionMeta stores a single metadata entry for this session.
+func (s *Session) SetSessionMeta(key, value string) {
+	s.sessionMutex.Lock()
+	defer s.sessionMutex.Unlock()
+	if s.meta == nil {
+		s.meta = make(map[string]string)
+	}
+	s.meta[key] = value
+}
+
+// GetSessionMeta returns one metadata value previously set with SetSessionMeta.
+func (s *Session) GetSessionMeta(key string) (string, bool) {
+	s.sessionMutex.RLock()
+	defer s.sessionMutex.RUnlock()
+	if s.meta == nil {
+		return "", false
+	}
+	v, ok := s.meta[key]
+	return v, ok
+}
+
+// SessionMeta returns a shallow copy of all session metadata.
+func (s *Session) SessionMeta() map[string]string {
+	s.sessionMutex.RLock()
+	defer s.sessionMutex.RUnlock()
+	out := make(map[string]string, len(s.meta))
+	for k, v := range s.meta {
+		out[k] = v
+	}
+	return out
 }
 
 func (s *Session) getNextSequence() uint32 {
