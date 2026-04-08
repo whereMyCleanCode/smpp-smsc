@@ -34,11 +34,11 @@ type Session struct {
 	ApplicationID string
 	// meta is arbitrary key/value metadata for application use (not part of SMPP).
 	// Use SetSessionMeta / GetSessionMeta / SessionMeta; do not mutate the map directly.
-	meta map[string]string
-	PodID         string
-	SystemID      string
-	Password      string
-	Address       string
+	meta     map[string]string
+	PodID    string
+	SystemID string
+	Password string
+	Address  string
 
 	BindingType        BindingType
 	RegisteredDelivery RegisteredDeliveryFlags
@@ -356,7 +356,7 @@ func (s *Session) processPDU(pkt pdu.Body) {
 }
 
 func (s *Session) sendEnquireLinkReq() error {
-	if s.getEnquireRetryCount() >= s.cfg.MaxEnquireLinkRetryCount {
+	if s.getEnquireRetryCount() > s.cfg.MaxEnquireLinkRetryCount {
 		return fmt.Errorf("max enquire_link retries exceeded")
 	}
 
