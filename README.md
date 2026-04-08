@@ -187,6 +187,8 @@ This allows handler implementations to apply custom business logic without losin
 - `0x02`: receipt on failure only
 - `0x03`: receipt on success only
 
+`replace_if_present`: when set on `submit_sm`, the runtime looks up the last **accepted** submit (same `service_type`, `source_addr`, `destination_addr`, `sm_default_msg_id`) on that session. If found, pending DLR correlation for the previous internal message ID is dropped before the new submit is processed, so delivery-report routing does not keep stale IDs.
+
 ## Development
 
 ```bash

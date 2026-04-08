@@ -70,6 +70,11 @@ type Session struct {
 
 	registerMessageID   func(uint64)
 	unregisterMessageID func(uint64)
+
+	// replaceSubmitLast tracks the last accepted submit_sm message ID per logical route
+	// (service_type, source, destination, sm_default_msg_id) for replace_if_present handling.
+	replaceSubmitMu   sync.Mutex
+	replaceSubmitLast map[string]uint64
 }
 
 func (s *Session) start() {
@@ -609,6 +614,44 @@ func fillSegmentGroupID(params *SubmitSmParams) {
 	params.Segment.SegmentGroupID = hex.EncodeToString(sum[:])
 }
 
+func makeReplaceSubmitKey(p *SubmitSmParams) string {
+	return p.ServiceType + "\x00" + p.SourceAddr + "\x00" + p.DestAddr + "\x00" + strconv.Itoa(int(p.SMDefaultMsgID))
+}
+
+func (s *Session) tryReplacePreviousSubmit(params *SubmitSmParams) {
+	if params == nil || params.ReplaceIfPresentFlag == 0 {
+		return
+	}
+	key := makeReplaceSubmitKey(params)
+
+	s.replaceSubmitMu.Lock()
+	defer s.replaceSubmitMu.Unlock()
+
+	if s.replaceSubmitLast == nil {
+		return
+	}
+	oldID, ok := s.replaceSubmitLast[key]
+	if !ok {
+		return
+	}
+	s.RemovePendingRequestByMessageID(oldID)
+	delete(s.replaceSubmitLast, key)
+}
+
+func (s *Session) recordReplaceableSubmit(params *SubmitSmParams, messageID uint64) {
+	if params == nil || messageID == 0 {
+		return
+	}
+	key := makeReplaceSubmitKey(params)
+
+	s.replaceSubmitMu.Lock()
+	defer s.replaceSubmitMu.Unlock()
+	if s.replaceSubmitLast == nil {
+		s.replaceSubmitLast = make(map[string]uint64)
+	}
+	s.replaceSubmitLast[key] = messageID
+}
+
 func (s *Session) handleSubmitSM(
 	params *SubmitSmParams,
 	handle func(context.Context, *SubmitSmParams, *Session) *SmppResponse,
@@ -628,6 +671,7 @@ func (s *Session) handleSubmitSM(
 			return messageID, &SmppResponse{Status: StatusOK}, nil
 		}
 		params.Text = fullText
+		s.tryReplacePreviousSubmit(params)
 		response := handle(s.ctx, params, s)
 		if response == nil {
 			response = &SmppResponse{Status: StatusSysErr}
@@ -642,6 +686,7 @@ func (s *Session) handleSubmitSM(
 		if response.Status != StatusOK {
 			return messageID, response, fmt.Errorf("submit_sm failed with status=%d", response.Status)
 		}
+		s.recordReplaceableSubmit(params, messageID)
 		return messageID, response, nil
 	}
 
@@ -658,6 +703,7 @@ func (s *Session) handleSubmitSM(
 		params.Text = text
 	}
 
+	s.tryReplacePreviousSubmit(params)
 	response := handle(s.ctx, params, s)
 	if response == nil {
 		response = &SmppResponse{Status: StatusSysErr}
@@ -672,6 +718,7 @@ func (s *Session) handleSubmitSM(
 	if response.Status != StatusOK {
 		return messageID, response, fmt.Errorf("submit_sm failed with status=%d", response.Status)
 	}
+	s.recordReplaceableSubmit(params, messageID)
 	return messageID, response, nil
 }
 

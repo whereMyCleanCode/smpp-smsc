@@ -213,6 +213,73 @@ func TestSessionHandleSubmitSMRegistersPendingRequest(t *testing.T) {
 	}
 }
 
+func TestSessionHandleSubmitSMReplaceIfPresentSupersedesPending(t *testing.T) {
+	cfg := newTestConfig()
+	var lastRegistered uint64
+
+	session := &Session{
+		ID:          "sess-replace",
+		BindingType: BindingTypeTransceiver,
+		cfg:         cfg,
+		ctx:         context.Background(),
+		cancel:      func() {},
+		stopCh:      make(chan struct{}),
+		pduQueue:    make(chan pdu.Body, 8),
+		segmentsMgr: NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}),
+		logger:      newTestLogger(),
+		registerMessageID: func(messageID uint64) {
+			lastRegistered = messageID
+		},
+	}
+
+	base := SubmitSmParams{
+		ServiceType:          "",
+		SourceAddr:           "77010000000",
+		DestAddr:             "77020000000",
+		ShortMessage:         []byte("one"),
+		Text:                 "one",
+		DataCoding:           DataCodingDefault,
+		RegisteredDelivery:   uint8(SuccessAndFailureReceipt),
+		ReplaceIfPresentFlag: 0,
+		SMDefaultMsgID:       0,
+		TLVParams:            map[uint16][]byte{},
+	}
+
+	id1, resp1, err1 := session.handleSubmitSM(&base, func(_ context.Context, _ *SubmitSmParams, _ *Session) *SmppResponse {
+		return &SmppResponse{Status: StatusOK}
+	})
+	if err1 != nil || resp1.Status != StatusOK {
+		t.Fatalf("first submit: err=%v status=%d", err1, resp1.Status)
+	}
+	if _, ok := session.PendingRequests.Load(id1); !ok {
+		t.Fatalf("first message should have pending DLR tracking")
+	}
+
+	second := base
+	second.ShortMessage = []byte("two")
+	second.Text = "two"
+	second.ReplaceIfPresentFlag = 1
+
+	id2, resp2, err2 := session.handleSubmitSM(&second, func(_ context.Context, _ *SubmitSmParams, _ *Session) *SmppResponse {
+		return &SmppResponse{Status: StatusOK}
+	})
+	if err2 != nil || resp2.Status != StatusOK {
+		t.Fatalf("second submit: err=%v status=%d", err2, resp2.Status)
+	}
+	if id2 == id1 {
+		t.Fatalf("expected new message id on replace")
+	}
+	if _, ok := session.PendingRequests.Load(id1); ok {
+		t.Fatalf("previous message pending should be removed on replace")
+	}
+	if _, ok := session.PendingRequests.Load(id2); !ok {
+		t.Fatalf("new message should have pending DLR tracking")
+	}
+	if lastRegistered != id2 {
+		t.Fatalf("last registered message id mismatch: got=%d want=%d", lastRegistered, id2)
+	}
+}
+
 func TestSessionHandleSubmitSMRegistersPendingRequestForFailureOnlyReceipt(t *testing.T) {
 	cfg := newTestConfig()
 	var registeredID uint64
