@@ -11,7 +11,6 @@ import (
 
 	"github.com/whereMyCleanCode/go-smpp/v2/smpp/pdu"
 	"github.com/whereMyCleanCode/go-smpp/v2/smpp/pdu/pdufield"
-	"github.com/whereMyCleanCode/go-smpp/v2/smpp/pdu/pdutext"
 	"github.com/whereMyCleanCode/go-smpp/v2/smpp/pdu/pdutlv"
 	"golang.org/x/time/rate"
 )
@@ -390,7 +389,7 @@ func (s *Server) SendSegmentedDeliverSM(
 	ctx context.Context,
 	sessionID, sourceAddr, destAddr, text string,
 	determineEncoding func(string) uint8,
-	encodeText func(string, uint8) []byte,
+	encodeText func(string, uint8) ([]byte, error),
 ) (int, error) {
 	if text == "" {
 		return 0, fmt.Errorf("empty text")
@@ -412,10 +411,13 @@ func (s *Server) SendSegmentedDeliverSM(
 
 	segments := splitTextIntoSegments(text, dataCoding)
 	if len(segments) == 1 {
-		payload := encodeText(text, dataCoding)
+		payload, err := encodeText(text, dataCoding)
+		if err != nil {
+			return 0, err
+		}
 		params := NewDeliverSMParams(sourceAddr, destAddr, payload)
 		params.DataCoding = dataCoding
-		_, err := s.SendDeliverSMWithParams(ctx, sessionID, params)
+		_, err = s.SendDeliverSMWithParams(ctx, sessionID, params)
 		if err != nil {
 			return 0, err
 		}
@@ -440,7 +442,10 @@ func (s *Server) SendSegmentedDeliverSM(
 			byte(len(segments)),
 			byte(i + 1),
 		}
-		segmentBytes := encodeText(segmentText, dataCoding)
+		segmentBytes, err := encodeText(segmentText, dataCoding)
+		if err != nil {
+			return sent, err
+		}
 		if len(segmentBytes)+len(udh) > 255 {
 			segmentBytes = segmentBytes[:255-len(udh)]
 		}
@@ -469,17 +474,22 @@ func (s *Server) SendDeliverSMText(ctx context.Context, sessionID, sourceAddr, d
 		}
 		return DataCodingUCS2
 	}
-	encode := func(text string, dc uint8) []byte {
-		switch dc {
-		case DataCodingDefault:
-			return pdutext.GSM7([]byte(text)).Encode()
-		case DataCodingLatin1:
-			return pdutext.Latin1([]byte(text)).Encode()
-		default:
-			return pdutext.UCS2([]byte(text)).Encode()
-		}
+	encode := func(text string, dc uint8) ([]byte, error) {
+		return EncodeMessage(text, dc)
 	}
 
+	return s.SendSegmentedDeliverSM(ctx, sessionID, sourceAddr, destAddr, text, determineEncoding, encode)
+}
+
+// SendDeliverSMTextWithDataCoding sends MT text using the given data_coding (client / application choice),
+// encoding the UTF-8 string into GSM7 / UCS2 / Latin1 / Cyrillic bytes matching SMPP semantics.
+func (s *Server) SendDeliverSMTextWithDataCoding(ctx context.Context, sessionID, sourceAddr, destAddr, text string, dataCoding uint8) (int, error) {
+	determineEncoding := func(_ string) uint8 {
+		return dataCoding
+	}
+	encode := func(t string, dc uint8) ([]byte, error) {
+		return EncodeMessage(t, dc)
+	}
 	return s.SendSegmentedDeliverSM(ctx, sessionID, sourceAddr, destAddr, text, determineEncoding, encode)
 }
 
@@ -493,9 +503,13 @@ func splitTextIntoSegments(text string, dataCoding uint8) []string {
 
 	maxLen := maxUCS2Length
 	maxMultiLen := maxUCS2MultiLength
-	if dataCoding == DataCodingDefault || dataCoding == DataCodingLatin1 {
+	switch dataCoding {
+	case DataCodingDefault:
 		maxLen = maxGSM7Length
 		maxMultiLen = maxGSM7MultiLength
+	case DataCodingLatin1, DataCodingCyrillic:
+		maxLen = 140
+		maxMultiLen = 134
 	}
 
 	runes := []rune(text)

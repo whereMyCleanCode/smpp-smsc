@@ -69,6 +69,23 @@ func DetectEncoding(message []byte) (uint8, int) {
 	return DataCodingUCS2, 70
 }
 
+// EncodeMessage encodes text for Short Message field bytes according to SMPP data_coding
+// (aligned with DecodeMessage). Input is UTF-8; unmappable characters for Latin1/Cyrillic return an error.
+func EncodeMessage(text string, dataCoding uint8) ([]byte, error) {
+	switch dataCoding {
+	case DataCodingDefault:
+		return pdutext.GSM7([]byte(text)).Encode(), nil
+	case DataCodingUCS2:
+		return pdutext.UCS2([]byte(text)).Encode(), nil
+	case DataCodingLatin1:
+		return charmap.Windows1252.NewEncoder().Bytes([]byte(text))
+	case DataCodingCyrillic:
+		return charmap.ISO8859_5.NewEncoder().Bytes([]byte(text))
+	default:
+		return nil, fmt.Errorf("unsupported data_coding=%d", dataCoding)
+	}
+}
+
 func DecodeMessage(message []byte, dataCoding uint8) (string, error) {
 	if len(message) == 0 {
 		return "", nil
