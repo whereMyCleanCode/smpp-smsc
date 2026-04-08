@@ -55,6 +55,9 @@ const (
 	DataCodingUCS2     uint8 = uint8(pdutext.UCS2Type)
 )
 
+// ESMClassDeliveryReceipt is deliver_sm carrying a GSM short message delivery receipt (SMPP message type).
+const ESMClassDeliveryReceipt uint8 = 0x04
+
 const (
 	PDUHeaderSize = pdu.HeaderLen
 	MinPDUSize    = pdu.HeaderLen

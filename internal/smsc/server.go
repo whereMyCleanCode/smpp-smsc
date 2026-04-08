@@ -3,9 +3,11 @@ package smsc
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -356,6 +358,80 @@ func (s *Server) SendDeliverSMWithParams(ctx context.Context, sessionID string, 
 		return 0, err
 	}
 	return seq, nil
+}
+
+// SendDeliveryReport sends a GSM short message delivery receipt as deliver_sm (ESM class delivery receipt).
+// sourceAddr is typically the MT destination (recipient); destAddr the original submit source (sender).
+// messageIDStr must match the message_id from submit_sm_resp (id: field in the receipt body).
+// internalMessageID is the SMSC internal id stored in PendingRequests at submit time; it is removed after a send or policy skip.
+func (s *Server) SendDeliveryReport(
+	ctx context.Context,
+	sessionID, sourceAddr, destAddr, messageIDStr string,
+	internalMessageID uint64,
+	success bool,
+	receiptText string,
+) (DeliveryReportResult, error) {
+	session, ok := s.sessionsManager.GetSessionByID(sessionID)
+	if !ok {
+		return DeliveryReportSkippedSessionClosed, fmt.Errorf("session not found: %s", sessionID)
+	}
+	if !session.Bound {
+		return DeliveryReportSkippedSessionClosed, fmt.Errorf("session not bound: %s", sessionID)
+	}
+	if !session.BindingType.IsReceiver() {
+		return DeliveryReportSkippedSessionClosed, fmt.Errorf("invalid binding type for deliver: %s", session.BindingType)
+	}
+
+	v, ok := session.PendingRequests.Load(internalMessageID)
+	if !ok {
+		return DeliveryReportSkippedNoReceipt, fmt.Errorf("pending request not found for message_id=%d", internalMessageID)
+	}
+	pr := v.(PendingRequest)
+	flags := RegisteredDeliveryFlags(pr.RegisteredDelivery)
+	if !flags.RequiresDeliveryReceipt() {
+		session.RemovePendingRequestByMessageID(internalMessageID)
+		return DeliveryReportSkippedNoReceipt, nil
+	}
+	if !flags.ShouldSendDeliveryReceipt(success) {
+		session.RemovePendingRequestByMessageID(internalMessageID)
+		switch flags.GetReceiptType() {
+		case SuccessOnlyReceipt:
+			return DeliveryReportSkippedSuccessOnly, nil
+		case FailureOnlyReceipt:
+			return DeliveryReportSkippedFailureOnly, nil
+		default:
+			return DeliveryReportSkippedNoReceipt, nil
+		}
+	}
+
+	now := time.Now()
+	var fields DeliveryReceiptFields
+	if receiptText != "" {
+		fields = BuildDeliveryReceiptFromPendingWithText(messageIDStr, pr, success, now, receiptText)
+	} else {
+		fields = BuildDeliveryReceiptFromPending(messageIDStr, pr, success, now)
+	}
+	body := []byte(FormatDeliveryReceiptString(fields))
+	params := NewDeliverSMParams(sourceAddr, destAddr, body)
+	params.DataCoding = DataCodingDefault
+	params.ESMClass = ESMClassDeliveryReceipt
+
+	_, err := s.SendDeliverSMWithParams(ctx, sessionID, params)
+	if err != nil {
+		if errors.Is(err, ErrSessionClosed) {
+			return DeliveryReportSkippedSessionClosed, err
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return 0, err
+		}
+		if strings.Contains(err.Error(), "timeout") {
+			return DeliveryReportSkippedQueueFull, err
+		}
+		return 0, err
+	}
+
+	session.RemovePendingRequestByMessageID(internalMessageID)
+	return DeliveryReportSent, nil
 }
 
 func (s *Server) createDeliverSMPDUWithParams(params *DeliverSMParams) pdu.Body {

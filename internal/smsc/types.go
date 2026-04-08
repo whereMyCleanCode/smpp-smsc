@@ -53,6 +53,24 @@ func (r RegisteredDeliveryFlags) RequiresDeliveryReceipt() bool {
 	return r.GetReceiptType() != NoReceipt
 }
 
+// ShouldSendDeliveryReceipt returns whether a delivery receipt should be emitted
+// for the given MT outcome when registered_delivery requested a receipt.
+// NoReceipt must not reach here if the caller only stores pending when RequiresDeliveryReceipt is true.
+func (r RegisteredDeliveryFlags) ShouldSendDeliveryReceipt(success bool) bool {
+	switch r.GetReceiptType() {
+	case NoReceipt:
+		return false
+	case SuccessAndFailureReceipt:
+		return true
+	case FailureOnlyReceipt:
+		return !success
+	case SuccessOnlyReceipt:
+		return success
+	default:
+		return false
+	}
+}
+
 type SubmitSmParams struct {
 	MessageID uint64
 
@@ -148,8 +166,9 @@ func (p *SubmitSmParams) GetTLVBytes(tag uint16) ([]byte, bool) {
 }
 
 type PendingRequest struct {
-	SegmentsCount uint8
-	CreatedAt     time.Time
+	SegmentsCount      uint8
+	RegisteredDelivery uint8 // raw submit_sm registered_delivery octet
+	CreatedAt          time.Time
 }
 
 type MessageSegment struct {
@@ -168,7 +187,8 @@ type MessageSegment struct {
 type DeliveryReportResult uint8
 
 const (
-	DeliveryReportSent DeliveryReportResult = iota
+	_ DeliveryReportResult = iota // unspecified; ignore when err != nil
+	DeliveryReportSent
 	DeliveryReportSkippedNoReceipt
 	DeliveryReportSkippedSuccessOnly
 	DeliveryReportSkippedFailureOnly
@@ -178,6 +198,8 @@ const (
 
 func (r DeliveryReportResult) String() string {
 	switch r {
+	case 0:
+		return "UNSPECIFIED"
 	case DeliveryReportSent:
 		return "SENT"
 	case DeliveryReportSkippedNoReceipt:

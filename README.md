@@ -203,6 +203,17 @@ This allows handler implementations to apply custom business logic without losin
 
 `replace_if_present`: when set on `submit_sm`, the runtime looks up the last **accepted** submit (same `service_type`, `source_addr`, `destination_addr`, `sm_default_msg_id`) on that session. If found, pending DLR correlation for the previous internal message ID is dropped before the new submit is processed, so delivery-report routing does not keep stale IDs.
 
+## Delivery receipts (MT → ESME)
+
+When a client requested a receipt on `submit_sm`, the SMSC stores `PendingRequest` (segment count and raw `registered_delivery`) under the internal message id. To emit a GSM **delivery receipt** toward the bound receiver/transceiver, use `Server.SendDeliveryReport` with:
+
+- `messageIDStr`: the same `message_id` string you returned in `submit_sm_resp` (it becomes the `id:` field in the receipt body).
+- `internalMessageID`: the internal `uint64` message id used as the key in `PendingRequests` (from `HandleSubmitSM` / segment completion).
+- `success`: final delivery outcome; `registered_delivery` policy (success-only / failure-only / both) decides whether a `deliver_sm` is sent; skipped outcomes return `DeliveryReportSkipped*` and still clear the pending entry.
+- **Addresses**: `source_addr` / `destination_addr` on the receipt are typically the MT destination (recipient) and original submit source respectively (swap relative to `submit_sm` direction).
+
+The receipt short message is formatted as `id:… sub:… dlvrd:… submit date:… done date:… stat:… err:… text:…`. For failures, `dlvrd` is `000` while `sub` reflects the submitted segment count; for success, `sub` and `dlvrd` match (at least one segment). Helpers `FormatDeliveryReceiptString` and `BuildDeliveryReceiptFromPending` live in the same package for tests or custom send paths.
+
 ## Development
 
 ```bash

@@ -38,9 +38,11 @@ type Session struct {
 
 	ID            string
 	ApplicationID string
+
 	// meta is arbitrary key/value metadata for application use (not part of SMPP).
 	// Use SetSessionMeta / GetSessionMeta / SessionMeta; do not mutate the map directly.
-	meta     map[string]string
+	meta map[string]string
+
 	PodID    string
 	SystemID string
 	Password string
@@ -361,7 +363,7 @@ func (s *Session) processPDU(pkt pdu.Body) {
 }
 
 func (s *Session) sendEnquireLinkReq() error {
-	if s.getEnquireRetryCount() > s.cfg.MaxEnquireLinkRetryCount {
+	if s.getEnquireRetryCount() >= s.cfg.MaxEnquireLinkRetryCount {
 		return fmt.Errorf("max enquire_link retries exceeded")
 	}
 
@@ -718,7 +720,11 @@ func (s *Session) handleSubmitSM(
 		}
 		if deliveryReceiptRequested {
 			segmentsCount := calcSegments(params.DataCoding, params.Text)
-			s.PendingRequests.Store(messageID, PendingRequest{SegmentsCount: segmentsCount, CreatedAt: time.Now()})
+			s.PendingRequests.Store(messageID, PendingRequest{
+				SegmentsCount:      segmentsCount,
+				RegisteredDelivery: params.RegisteredDelivery,
+				CreatedAt:          time.Now(),
+			})
 			if s.registerMessageID != nil {
 				s.registerMessageID(messageID)
 			}
@@ -750,7 +756,11 @@ func (s *Session) handleSubmitSM(
 	}
 	if RegisteredDeliveryFlags(params.RegisteredDelivery).RequiresDeliveryReceipt() {
 		segmentsCount := calcSegments(params.DataCoding, params.Text)
-		s.PendingRequests.Store(messageID, PendingRequest{SegmentsCount: segmentsCount, CreatedAt: time.Now()})
+		s.PendingRequests.Store(messageID, PendingRequest{
+			SegmentsCount:      segmentsCount,
+			RegisteredDelivery: params.RegisteredDelivery,
+			CreatedAt:          time.Now(),
+		})
 		if s.registerMessageID != nil {
 			s.registerMessageID(messageID)
 		}
