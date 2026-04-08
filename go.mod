@@ -2,13 +2,11 @@ module github.com/whereMyCleanCode/smpp-smsc
 
 go 1.25.1
 
-replace github.com/whereMyCleanCode/go-smpp/v2 => ../go-smpp
-
 require (
 	github.com/bwmarrin/snowflake v0.3.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/maypok86/otter/v2 v2.3.0
-	github.com/whereMyCleanCode/go-smpp/v2 v2.0.0-00010101000000-000000000000
+	github.com/whereMyCleanCode/go-smpp/v2 v2.0.0-20260408100738-5101bd346359
 	go.uber.org/zap v1.27.1
 	golang.org/x/text v0.35.0
 	golang.org/x/time v0.15.0
