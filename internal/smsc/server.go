@@ -26,7 +26,7 @@ type Server struct {
 
 	listener net.Listener
 
-	sessionsManager *SessionsManager
+	sessionsManager *SessController
 
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -215,7 +215,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		ctx:               ctx,
 		cancel:            cancel,
 		lastActivityNanos: now.UnixNano(),
-		segmentsMgr:       NewSegmentsManager(s.lgr, s.cfg.SegsBucketTtl, s.idGenerator),
+		segmentsMgr:       NewSegmentsManager(s.lgr, s.cfg.SegsBucketTtl, s.idGenerator, s.cfg.MaxSubmitSMSegments),
 		rateLimiter:       rate.NewLimiter(rate.Limit(maxInt(1, s.cfg.DefaultMaxRPSLimit)), maxInt(1, s.cfg.DefaultBurstRPSLimit)),
 	}
 

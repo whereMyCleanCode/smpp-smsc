@@ -105,7 +105,7 @@ func newTestConfig() *Config {
 	cfg := DefaultConfig()
 	cfg.Timeout = 200 * time.Millisecond
 	cfg.InactivityTimeout = 50 * time.Millisecond
-	cfg.MaxEnquireLinkRetryCount = 1
+	cfg.MaxEnquireLinkRetry = 1
 	cfg.WindowSize = 64
 	cfg.DecoderBufferSize = 4096
 	return cfg

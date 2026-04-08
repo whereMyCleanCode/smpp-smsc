@@ -56,6 +56,7 @@ func TestConfigSettersFluentAPI(t *testing.T) {
 		SetDefaultMaxRPSLimit(200).
 		SetDefaultBurstRPSLimit(250).
 		SetDefaultMaxSegmentsCount(10).
+		SetMaxSubmitSMSegments(22).
 		SetTCPNoDelay(false).
 		SetTCPKeepAlive(false).
 		SetTCPKeepAlivePeriod(30 * time.Second).
@@ -73,6 +74,9 @@ func TestConfigSettersFluentAPI(t *testing.T) {
 	}
 	if cfg.Timeout != 5*time.Second || cfg.TCPKeepAlivePeriod != 30*time.Second {
 		t.Fatalf("duration fields were not set correctly")
+	}
+	if cfg.MaxSubmitSMSegments != 22 {
+		t.Fatalf("MaxSubmitSMSegments was not set correctly")
 	}
 }
 

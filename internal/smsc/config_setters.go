@@ -53,7 +53,7 @@ func (c *Config) SetSegmentsTTL(ttl time.Duration) *Config {
 }
 
 func (c *Config) SetMaxEnquireLinkRetryCount(count int) *Config {
-	c.MaxEnquireLinkRetryCount = count
+	c.MaxEnquireLinkRetry = count
 	return c
 }
 
@@ -89,6 +89,11 @@ func (c *Config) SetDefaultBurstRPSLimit(limit int) *Config {
 
 func (c *Config) SetDefaultMaxSegmentsCount(limit int) *Config {
 	c.DefaultMaxSegsCount = limit
+	return c
+}
+
+func (c *Config) SetMaxSubmitSMSegments(limit int) *Config {
+	c.MaxSubmitSMSegments = limit
 	return c
 }
 

@@ -7,7 +7,7 @@ import (
 
 func TestSegmentsManagerReassemblesMessage(t *testing.T) {
 	idGen := &stubIDGenerator{}
-	mgr := NewSegmentsManager(newTestLogger(), time.Minute, idGen)
+	mgr := NewSegmentsManager(newTestLogger(), time.Minute, idGen, 10)
 
 	base := &MessageSegment{
 		SegmentGroupID: "group-A",
@@ -62,5 +62,50 @@ func TestSegmentsManagerReassemblesMessage(t *testing.T) {
 	}
 	if messageID == 0 || messageID2 != messageID || messageID3 != messageID {
 		t.Fatalf("message id mismatch: first=%d second=%d third=%d", messageID, messageID2, messageID3)
+	}
+}
+
+func TestSegmentsManagerReassemblesMessageTwelveSegments(t *testing.T) {
+	const n = 12
+	idGen := &stubIDGenerator{}
+	mgr := NewSegmentsManager(newTestLogger(), time.Minute, idGen, n)
+
+	base := &MessageSegment{
+		SegmentGroupID: "group-12",
+		SegmentsCount:  n,
+		Encoding:       DataCodingDefault,
+		RegisteredAt:   time.Now(),
+	}
+
+	var want string
+	for i := 1; i <= n; i++ {
+		want += string(rune('A' + i - 1))
+	}
+
+	for i := 1; i <= n; i++ {
+		seg := *base
+		seg.SegmentSeqNum = uint8(i)
+		seg.Text = []byte{byte('A' + i - 1)}
+		_, status, text, complete, _, err := mgr.AddSegment(&seg)
+		if err != nil {
+			t.Fatalf("segment %d add error: %v", i, err)
+		}
+		if status != StatusOK {
+			t.Fatalf("segment %d status=%d", i, status)
+		}
+		if i < n && complete {
+			t.Fatalf("segment %d should not be complete yet", i)
+		}
+		if i < n && text != "" {
+			t.Fatalf("segment %d unexpected text %q", i, text)
+		}
+		if i == n {
+			if !complete {
+				t.Fatalf("last segment should complete")
+			}
+			if text != want {
+				t.Fatalf("reassembled text: got %q want %q", text, want)
+			}
+		}
 	}
 }

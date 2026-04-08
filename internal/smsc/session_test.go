@@ -128,7 +128,7 @@ func TestHandleSubmitSMCallbackReceivesExpandedSubmitParams(t *testing.T) {
 		cancel:      func() {},
 		stopCh:      make(chan struct{}),
 		pduQueue:    make(chan pdu.Body, 8),
-		segmentsMgr: NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}),
+		segmentsMgr: NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}, 10),
 		logger:      newTestLogger(),
 	}
 
@@ -176,7 +176,7 @@ func TestSessionHandleSubmitSMRegistersPendingRequest(t *testing.T) {
 		cancel:      func() {},
 		stopCh:      make(chan struct{}),
 		pduQueue:    make(chan pdu.Body, 8),
-		segmentsMgr: NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}),
+		segmentsMgr: NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}, 10),
 		logger:      newTestLogger(),
 		registerMessageID: func(messageID uint64) {
 			registeredID = messageID
@@ -225,7 +225,7 @@ func TestSessionHandleSubmitSMReplaceIfPresentSupersedesPending(t *testing.T) {
 		cancel:      func() {},
 		stopCh:      make(chan struct{}),
 		pduQueue:    make(chan pdu.Body, 8),
-		segmentsMgr: NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}),
+		segmentsMgr: NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}, 10),
 		logger:      newTestLogger(),
 		registerMessageID: func(messageID uint64) {
 			lastRegistered = messageID
@@ -292,7 +292,7 @@ func TestSessionHandleSubmitSMRegistersPendingRequestForFailureOnlyReceipt(t *te
 		cancel:      func() {},
 		stopCh:      make(chan struct{}),
 		pduQueue:    make(chan pdu.Body, 8),
-		segmentsMgr: NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}),
+		segmentsMgr: NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}, 10),
 		logger:      newTestLogger(),
 		registerMessageID: func(messageID uint64) {
 			registeredID = messageID
@@ -341,7 +341,7 @@ func TestSegmentedSubmitSMAnySegmentRequestedDLRRegistersPending(t *testing.T) {
 		cancel:      func() {},
 		stopCh:      make(chan struct{}),
 		pduQueue:    make(chan pdu.Body, 8),
-		segmentsMgr: NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}),
+		segmentsMgr: NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}, 10),
 		logger:      newTestLogger(),
 		registerMessageID: func(messageID uint64) {
 			registeredID = messageID
@@ -441,7 +441,7 @@ func TestSessionMeta(t *testing.T) {
 
 func TestSendEnquireLinkReq(t *testing.T) {
 	cfg := newTestConfig()
-	cfg.MaxEnquireLinkRetryCount = 1
+	cfg.MaxEnquireLinkRetry = 1
 
 	session := &Session{
 		ID:          "sess-enquire",
@@ -450,7 +450,7 @@ func TestSendEnquireLinkReq(t *testing.T) {
 		cancel:      func() {},
 		stopCh:      make(chan struct{}),
 		pduQueue:    make(chan pdu.Body, 2),
-		segmentsMgr: NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}),
+		segmentsMgr: NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}, 10),
 		logger:      newTestLogger(),
 	}
 

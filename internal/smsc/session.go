@@ -363,7 +363,7 @@ func (s *Session) processPDU(pkt pdu.Body) {
 }
 
 func (s *Session) sendEnquireLinkReq() error {
-	if s.getEnquireRetryCount() >= s.cfg.MaxEnquireLinkRetryCount {
+	if s.getEnquireRetryCount() >= s.cfg.MaxEnquireLinkRetry {
 		return fmt.Errorf("max enquire_link retries exceeded")
 	}
 

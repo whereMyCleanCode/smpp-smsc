@@ -28,7 +28,7 @@ func TestSendDeliveryReport_FailureOnlySkipsSuccess(t *testing.T) {
 		cancel:        cancel,
 		stopCh:        make(chan struct{}),
 		pduQueue:      make(chan pdu.Body, 8),
-		segmentsMgr:   NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}),
+		segmentsMgr:   NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}, 10),
 		logger:        newTestLogger(),
 	}
 	manager.sessions.Set(session.ID, session)
@@ -80,7 +80,7 @@ func TestSendDeliveryReport_SuccessAndFailureSendsDeliverSM(t *testing.T) {
 		cancel:        cancel,
 		stopCh:        make(chan struct{}),
 		pduQueue:      make(chan pdu.Body, 8),
-		segmentsMgr:   NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}),
+		segmentsMgr:   NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}, 10),
 		logger:        newTestLogger(),
 	}
 	manager.sessions.Set(session.ID, session)
