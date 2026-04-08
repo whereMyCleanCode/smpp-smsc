@@ -21,6 +21,12 @@ import (
 	"golang.org/x/time/rate"
 )
 
+var maxSequence uint32
+
+func init() {
+	maxSequence = 0x7FFFFFFF
+}
+
 type Session struct {
 	MessagesSent      int64
 	MessagesReceived  int64
@@ -239,7 +245,6 @@ func (s *Session) getNextSequence() uint32 {
 	s.sequenceMutex.Lock()
 	defer s.sequenceMutex.Unlock()
 
-	const maxSequence uint32 = 0x7FFFFFFF
 	if s.sequenceNumber >= maxSequence {
 		s.sequenceNumber = 1
 		return s.sequenceNumber
