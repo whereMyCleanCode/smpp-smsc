@@ -89,7 +89,7 @@ func TestSessionHandleSubmitSMRegistersPendingRequest(t *testing.T) {
 	}
 
 	messageID, response, err := session.handleSubmitSM(params, func(_ context.Context, _ *SubmitSmParams, _ *Session) *SmppResponse {
-		return ToSmppResponse(StatusOK)
+		return &SmppResponse{Status: StatusOK}
 	})
 	if err != nil {
 		t.Fatalf("handleSubmitSM error: %v", err)

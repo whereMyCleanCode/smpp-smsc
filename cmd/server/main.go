@@ -40,12 +40,12 @@ func (h *demoHandler) HandleBindTransmitter(ctx context.Context, params map[stri
 
 func (h *demoHandler) HandleSubmitSM(_ context.Context, params *smsc.SubmitSmParams, session *smsc.Session) *smsc.SmppResponse {
 	if !session.BindingType.IsTransmitter() {
-		return smsc.ToSmppResponse(smsc.StatusInvBnd)
+		return &smsc.SmppResponse{Status: smsc.StatusInvBnd}
 	}
 	if params.SourceAddr == "" || params.DestAddr == "" {
-		return smsc.ToSmppResponse(smsc.StatusInvSrcAdr)
+		return &smsc.SmppResponse{Status: smsc.StatusInvSrcAdr}
 	}
-	return smsc.ToSmppResponse(smsc.StatusOK)
+	return &smsc.SmppResponse{Status: smsc.StatusOK}
 }
 
 func (h *demoHandler) HandleUnbind(_ context.Context, session *smsc.Session) (uint32, error) {

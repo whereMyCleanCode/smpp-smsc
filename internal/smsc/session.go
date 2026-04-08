@@ -452,7 +452,7 @@ func (s *Session) sendUnbindResponse(sequenceNumber uint32, status uint32) {
 func (s *Session) handleSubmitSMPDU(pkt pdu.Body) {
 	params, status, err := parseSubmitSM(pkt)
 	if err != nil {
-		s.sendSubmitSMResponse(pkt.Header().Seq, ToSmppResponse(status), "")
+		s.sendSubmitSMResponse(pkt.Header().Seq, &SmppResponse{Status: status}, "")
 		return
 	}
 
@@ -585,22 +585,22 @@ func (s *Session) handleSubmitSM(
 	handle func(context.Context, *SubmitSmParams, *Session) *SmppResponse,
 ) (uint64, *SmppResponse, error) {
 	if handle == nil {
-		return 0, ToSmppResponse(StatusSysErr), fmt.Errorf("submit handler is nil")
+		return 0, &SmppResponse{Status: StatusSysErr}, fmt.Errorf("submit handler is nil")
 	}
 
 	if params.Segment != nil && params.Segment.SegmentsCount > 1 {
 		messageID, status, fullText, isComplete, err := s.segmentsMgr.AddSegment(params.Segment)
 		params.MessageID = messageID
 		if err != nil {
-			return messageID, ToSmppResponse(status), err
+			return messageID, &SmppResponse{Status: status}, err
 		}
 		if !isComplete {
-			return messageID, ToSmppResponse(StatusOK), nil
+			return messageID, &SmppResponse{Status: StatusOK}, nil
 		}
 		params.Text = fullText
 		response := handle(s.ctx, params, s)
 		if response == nil {
-			response = ToSmppResponse(StatusSysErr)
+			response = &SmppResponse{Status: StatusSysErr}
 		}
 		if params.RegisteredDelivery == 1 {
 			segmentsCount := calcSegments(params.DataCoding, params.Text)
@@ -610,27 +610,27 @@ func (s *Session) handleSubmitSM(
 			}
 		}
 		if response.Status != StatusOK {
-			return messageID, response, errors.New(response.Msg)
+			return messageID, response, fmt.Errorf("submit_sm failed with status=%d", response.Status)
 		}
 		return messageID, response, nil
 	}
 
 	messageID, err := s.segmentsMgr.generateMessageID()
 	if err != nil {
-		return 0, ToSmppResponse(StatusSysErr), err
+		return 0, &SmppResponse{Status: StatusSysErr}, err
 	}
 	params.MessageID = messageID
 	if params.Text == "" {
 		text, derr := DecodeMessage(params.ShortMessage, params.DataCoding)
 		if derr != nil {
-			return messageID, ToSmppResponse(StatusInvDataCoding), derr
+			return messageID, &SmppResponse{Status: StatusInvDataCoding}, derr
 		}
 		params.Text = text
 	}
 
 	response := handle(s.ctx, params, s)
 	if response == nil {
-		response = ToSmppResponse(StatusSysErr)
+		response = &SmppResponse{Status: StatusSysErr}
 	}
 	if params.RegisteredDelivery == 1 {
 		segmentsCount := calcSegments(params.DataCoding, params.Text)
@@ -640,7 +640,7 @@ func (s *Session) handleSubmitSM(
 		}
 	}
 	if response.Status != StatusOK {
-		return messageID, response, errors.New(response.Msg)
+		return messageID, response, fmt.Errorf("submit_sm failed with status=%d", response.Status)
 	}
 	return messageID, response, nil
 }

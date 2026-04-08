@@ -179,32 +179,3 @@ type SmppResponse struct {
 	Msg    string
 	Status uint32
 }
-
-func ToSmppResponse(status uint32) *SmppResponse {
-	switch status {
-	case StatusOK:
-		return &SmppResponse{Status: StatusOK}
-	case StatusInvMsgLen:
-		return &SmppResponse{Msg: "invalid message length", Status: StatusInvMsgLen}
-	case StatusInvCmdLen:
-		return &SmppResponse{Msg: "invalid command length", Status: StatusInvCmdLen}
-	case StatusInvCmdID:
-		return &SmppResponse{Msg: "invalid command id", Status: StatusInvCmdID}
-	case StatusInvBnd:
-		return &SmppResponse{Msg: "invalid bind state", Status: StatusInvBnd}
-	case StatusAlyBnd:
-		return &SmppResponse{Msg: "already bound", Status: StatusAlyBnd}
-	case StatusBindFail:
-		return &SmppResponse{Msg: "bind failed", Status: StatusBindFail}
-	case StatusInvSysID:
-		return &SmppResponse{Msg: "invalid system id", Status: StatusInvSysID}
-	case StatusInvDataCoding:
-		return &SmppResponse{Msg: "invalid data coding", Status: StatusInvDataCoding}
-	case StatusInvPaswd:
-		return &SmppResponse{Msg: "invalid password", Status: StatusInvPaswd}
-	case StatusThrottled:
-		return &SmppResponse{Msg: "throttled", Status: StatusThrottled}
-	default:
-		return &SmppResponse{Msg: "unknown status", Status: status}
-	}
-}

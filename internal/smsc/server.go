@@ -578,12 +578,12 @@ func (h *defaultSMPPHandler) HandleBindTransmitter(_ context.Context, params map
 
 func (h *defaultSMPPHandler) HandleSubmitSM(_ context.Context, params *SubmitSmParams, session *Session) *SmppResponse {
 	if !session.BindingType.IsTransmitter() {
-		return ToSmppResponse(StatusInvBnd)
+		return &SmppResponse{Status: StatusInvBnd}
 	}
 	if params.SourceAddr == "" || params.DestAddr == "" {
-		return ToSmppResponse(StatusInvSrcAdr)
+		return &SmppResponse{Status: StatusInvSrcAdr}
 	}
-	return ToSmppResponse(StatusOK)
+	return &SmppResponse{Status: StatusOK}
 }
 
 func (h *defaultSMPPHandler) HandleUnbind(_ context.Context, session *Session) (uint32, error) {
