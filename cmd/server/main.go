@@ -62,7 +62,12 @@ func (h *demoHandler) HandleDeliverSMResp(_ context.Context, _ uint32, _ uint32,
 }
 
 func main() {
-	cfg := smsc.DefaultConfig()
+	cfg := smsc.DefaultConfig().
+		SetAddress(":2775").
+		SetLogLevel("info").
+		SetPrettyLogs(true).
+		SetColorLogs(true).
+		SetStartupVerbose(true)
 
 	logger := smsc.NewLoggerWithOptions(
 		os.Stdout,
@@ -92,12 +97,16 @@ func main() {
 		panic(err)
 	}
 
-	server, err := smsc.NewServer(cfg, logger, idGen)
+	container := smsc.NewContainer().
+		WithConfig(cfg).
+		WithLogger(logger).
+		WithIDGenerator(idGen).
+		WithHandler(&demoHandler{})
+
+	server, err := container.BuildServer()
 	if err != nil {
 		panic(err)
 	}
-
-	server.SetHandler(&demoHandler{})
 	errCh := server.Start()
 	logger.Info().Msg("signal handlers are being registered")
 
