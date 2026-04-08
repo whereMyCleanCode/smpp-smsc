@@ -19,6 +19,8 @@ type segmentGroup struct {
 	bitmap   uint16
 	count    uint8
 	expected uint8
+	// OR-accumulated delivery receipt request across all received segments in group.
+	deliveryReceiptRequested bool
 }
 
 func (g *segmentGroup) isComplete() bool {
@@ -81,13 +83,13 @@ func (m *SegmentsManager) generateMessageID() (uint64, error) {
 	return m.idGenerator.GenerateID()
 }
 
-func (m *SegmentsManager) AddSegment(segment *MessageSegment) (uint64, uint32, string, bool, error) {
+func (m *SegmentsManager) AddSegment(segment *MessageSegment) (uint64, uint32, string, bool, bool, error) {
 	messageID, err := m.generateMessageID()
 	if err != nil {
-		return 0, StatusSysErr, "", false, err
+		return 0, StatusSysErr, "", false, false, err
 	}
 	if segment.SegmentsCount > defaultSegmentsCount || segment.SegmentsCount <= 1 || segment.SegmentSeqNum > defaultSegmentsCount {
-		return messageID, StatusInvMsgLen, "", false, fmt.Errorf("invalid segment count")
+		return messageID, StatusInvMsgLen, "", false, false, fmt.Errorf("invalid segment count")
 	}
 
 	shard := m.getShard(segment.SegmentGroupID)
@@ -103,6 +105,7 @@ func (m *SegmentsManager) AddSegment(segment *MessageSegment) (uint64, uint32, s
 		}
 		shard.segments[segment.SegmentGroupID] = group
 	}
+	group.deliveryReceiptRequested = group.deliveryReceiptRequested || segment.DeliveryReceiptRequested
 
 	idx := segment.SegmentSeqNum - 1
 	if group.list[idx] == nil {
@@ -125,10 +128,11 @@ func (m *SegmentsManager) AddSegment(segment *MessageSegment) (uint64, uint32, s
 	group.bitmap |= 1 << idx
 
 	groupCopy := &segmentGroup{
-		meta:     group.meta,
-		bitmap:   group.bitmap,
-		count:    group.count,
-		expected: group.expected,
+		meta:                     group.meta,
+		bitmap:                   group.bitmap,
+		count:                    group.count,
+		expected:                 group.expected,
+		deliveryReceiptRequested: group.deliveryReceiptRequested,
 	}
 	for i, seg := range group.list {
 		if seg != nil {
@@ -140,7 +144,7 @@ func (m *SegmentsManager) AddSegment(segment *MessageSegment) (uint64, uint32, s
 
 	msg, coding, complete := m.GetCompleteMessage(groupCopy)
 	if !complete {
-		return messageID, StatusOK, "", false, nil
+		return messageID, StatusOK, "", false, false, nil
 	}
 
 	deleteShard := m.getShard(segment.SegmentGroupID)
@@ -149,7 +153,7 @@ func (m *SegmentsManager) AddSegment(segment *MessageSegment) (uint64, uint32, s
 	deleteShard.mu.Unlock()
 
 	text, err := DecodeMessage(msg, coding)
-	return messageID, StatusOK, text, true, err
+	return messageID, StatusOK, text, true, groupCopy.deliveryReceiptRequested, err
 }
 
 func (m *SegmentsManager) GetCompleteMessage(group *segmentGroup) ([]byte, uint8, bool) {

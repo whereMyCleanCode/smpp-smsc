@@ -28,17 +28,23 @@ func TestSegmentsManagerReassemblesMessage(t *testing.T) {
 	seg3.SegmentSeqNum = 3
 	seg3.Text = []byte("!")
 
-	messageID, status, text, complete, err := mgr.AddSegment(&seg2)
+	messageID, status, text, complete, dlrRequested, err := mgr.AddSegment(&seg2)
 	if err != nil || status != StatusOK || complete || text != "" {
 		t.Fatalf("unexpected first add result: id=%d status=%d complete=%v text=%q err=%v", messageID, status, complete, text, err)
 	}
+	if dlrRequested {
+		t.Fatalf("unexpected dlr request on first segment")
+	}
 
-	messageID2, status, text, complete, err := mgr.AddSegment(&seg1)
+	messageID2, status, text, complete, dlrRequested, err := mgr.AddSegment(&seg1)
 	if err != nil || status != StatusOK || complete || text != "" {
 		t.Fatalf("unexpected second add result: id=%d status=%d complete=%v text=%q err=%v", messageID2, status, complete, text, err)
 	}
+	if dlrRequested {
+		t.Fatalf("unexpected dlr request on second segment")
+	}
 
-	messageID3, status, text, complete, err := mgr.AddSegment(&seg3)
+	messageID3, status, text, complete, dlrRequested, err := mgr.AddSegment(&seg3)
 	if err != nil {
 		t.Fatalf("third add error: %v", err)
 	}
@@ -50,6 +56,9 @@ func TestSegmentsManagerReassemblesMessage(t *testing.T) {
 	}
 	if text != "Hello World!" {
 		t.Fatalf("unexpected reassembled text: %q", text)
+	}
+	if dlrRequested {
+		t.Fatalf("unexpected dlr request for this test case")
 	}
 	if messageID == 0 || messageID2 != messageID || messageID3 != messageID {
 		t.Fatalf("message id mismatch: first=%d second=%d third=%d", messageID, messageID2, messageID3)

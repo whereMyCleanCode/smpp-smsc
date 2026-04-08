@@ -12,6 +12,8 @@ It provides server-side SMPP flow handling (bind / submit_sm / deliver_sm / enqu
 - Segmented message reassembly with shard-based manager
 - O(1) message-to-session routing for delivery/report flows
 - Configurable pretty/json logs (color support for local dev)
+- Full `submit_sm` mandatory field parsing passed to external handlers
+- Raw access to all `submit_sm` TLVs via `SubmitSmParams.TLVParams`
 
 ## Quick Start
 
@@ -168,6 +170,22 @@ You can configure logging style using `Config`:
 - `PrettyLogs`: human-readable console output
 - `ColorLogs`: colorized levels in pretty mode
 - `StartupVerbose`: extended startup diagnostics
+
+## HandleSubmitSM Parameters
+
+`HandleSubmitSM` receives `*smsc.SubmitSmParams` with:
+
+- All mandatory `submit_sm` fields parsed (addresses, TON/NPI, esm/protocol/priority, schedule/validity, registered_delivery, replace_if_present, data_coding, sm_default_msg_id, short_message).
+- `TLVParams map[uint16][]byte` containing all optional TLVs in raw bytes.
+
+This allows handler implementations to apply custom business logic without losing protocol-level data.
+
+`registered_delivery` handling follows SMPP semantics by receipt type in the lower 2 bits:
+
+- `0x00`: no delivery receipt requested
+- `0x01`: receipt on final outcome (success or failure)
+- `0x02`: receipt on failure only
+- `0x03`: receipt on success only
 
 ## Development
 

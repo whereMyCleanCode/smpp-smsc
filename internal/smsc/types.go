@@ -49,18 +49,36 @@ func (r RegisteredDeliveryFlags) GetReceiptType() RegisteredDeliveryFlags {
 	return r & 0x03
 }
 
+func (r RegisteredDeliveryFlags) RequiresDeliveryReceipt() bool {
+	return r.GetReceiptType() != NoReceipt
+}
+
 type SubmitSmParams struct {
 	MessageID uint64
 
-	RegisteredDelivery uint8
-	ValidityPeriod     uint8
-	DataCoding         uint8
+	// submit_sm mandatory fields
+	ServiceType string
+
+	SourceAddrTON uint8
+	SourceAddrNPI uint8
+	SourceAddr    string
+
+	DestAddrTON uint8
+	DestAddrNPI uint8
+	DestAddr    string
+
+	ESMClass             uint8
+	ProtocolID           uint8
+	PriorityFlag         uint8
+	ScheduleDeliveryTime string
+	ValidityPeriod       string
+	RegisteredDelivery   uint8
+	ReplaceIfPresentFlag uint8
+	DataCoding           uint8
+	SMDefaultMsgID       uint8
 
 	SeqNum uint32
 
-	ServiceType  string
-	SourceAddr   string
-	DestAddr     string
 	ShortMessage []byte
 	Text         string
 	WithPayload  bool
@@ -143,6 +161,8 @@ type MessageSegment struct {
 	Text           []byte
 	Encoding       uint8
 	RegisteredAt   time.Time
+	// DeliveryReceiptRequested is a per-segment signal derived from registered_delivery.
+	DeliveryReceiptRequested bool
 }
 
 type DeliveryReportResult uint8

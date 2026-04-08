@@ -469,11 +469,13 @@ func (s *Session) handleSubmitSMPDU(pkt pdu.Body) {
 func parseSubmitSM(pkt pdu.Body) (*SubmitSmParams, uint32, error) {
 	fields := pkt.Fields()
 	params := &SubmitSmParams{
-		ServiceType: fields[pdufield.ServiceType].String(),
-		SourceAddr:  fields[pdufield.SourceAddr].String(),
-		DestAddr:    fields[pdufield.DestinationAddr].String(),
-		TLVParams:   make(map[uint16][]byte),
-		SeqNum:      pkt.Header().Seq,
+		ServiceType:          fields[pdufield.ServiceType].String(),
+		SourceAddr:           fields[pdufield.SourceAddr].String(),
+		DestAddr:             fields[pdufield.DestinationAddr].String(),
+		ScheduleDeliveryTime: fields[pdufield.ScheduleDeliveryTime].String(),
+		ValidityPeriod:       fields[pdufield.ValidityPeriod].String(),
+		TLVParams:            make(map[uint16][]byte),
+		SeqNum:               pkt.Header().Seq,
 	}
 
 	if params.SourceAddr == "" {
@@ -483,8 +485,35 @@ func parseSubmitSM(pkt pdu.Body) (*SubmitSmParams, uint32, error) {
 		return nil, StatusInvDstAdr, fmt.Errorf("destination_addr is empty")
 	}
 
-	if dc, ok := fields[pdufield.DataCoding].(*pdufield.Fixed); ok {
-		params.DataCoding = dc.Data
+	if v, ok := fields[pdufield.SourceAddrTON].(*pdufield.Fixed); ok {
+		params.SourceAddrTON = v.Data
+	}
+	if v, ok := fields[pdufield.SourceAddrNPI].(*pdufield.Fixed); ok {
+		params.SourceAddrNPI = v.Data
+	}
+	if v, ok := fields[pdufield.DestAddrTON].(*pdufield.Fixed); ok {
+		params.DestAddrTON = v.Data
+	}
+	if v, ok := fields[pdufield.DestAddrNPI].(*pdufield.Fixed); ok {
+		params.DestAddrNPI = v.Data
+	}
+	if v, ok := fields[pdufield.ESMClass].(*pdufield.Fixed); ok {
+		params.ESMClass = v.Data
+	}
+	if v, ok := fields[pdufield.ProtocolID].(*pdufield.Fixed); ok {
+		params.ProtocolID = v.Data
+	}
+	if v, ok := fields[pdufield.PriorityFlag].(*pdufield.Fixed); ok {
+		params.PriorityFlag = v.Data
+	}
+	if v, ok := fields[pdufield.ReplaceIfPresentFlag].(*pdufield.Fixed); ok {
+		params.ReplaceIfPresentFlag = v.Data
+	}
+	if v, ok := fields[pdufield.SMDefaultMsgID].(*pdufield.Fixed); ok {
+		params.SMDefaultMsgID = v.Data
+	}
+	if v, ok := fields[pdufield.DataCoding].(*pdufield.Fixed); ok {
+		params.DataCoding = v.Data
 	}
 	if params.DataCoding == 0 {
 		params.DataCoding = DataCodingDefault
@@ -497,8 +526,8 @@ func parseSubmitSM(pkt pdu.Body) (*SubmitSmParams, uint32, error) {
 		return nil, StatusInvDataCoding, fmt.Errorf("unsupported data_coding=%d", params.DataCoding)
 	}
 
-	if rd, ok := fields[pdufield.RegisteredDelivery].(*pdufield.Fixed); ok {
-		params.RegisteredDelivery = rd.Data
+	if v, ok := fields[pdufield.RegisteredDelivery].(*pdufield.Fixed); ok {
+		params.RegisteredDelivery = v.Data
 	}
 
 	if sm, ok := fields[pdufield.ShortMessage].(*pdufield.SM); ok {
@@ -589,7 +618,8 @@ func (s *Session) handleSubmitSM(
 	}
 
 	if params.Segment != nil && params.Segment.SegmentsCount > 1 {
-		messageID, status, fullText, isComplete, err := s.segmentsMgr.AddSegment(params.Segment)
+		params.Segment.DeliveryReceiptRequested = RegisteredDeliveryFlags(params.RegisteredDelivery).RequiresDeliveryReceipt()
+		messageID, status, fullText, isComplete, deliveryReceiptRequested, err := s.segmentsMgr.AddSegment(params.Segment)
 		params.MessageID = messageID
 		if err != nil {
 			return messageID, &SmppResponse{Status: status}, err
@@ -602,7 +632,7 @@ func (s *Session) handleSubmitSM(
 		if response == nil {
 			response = &SmppResponse{Status: StatusSysErr}
 		}
-		if params.RegisteredDelivery == 1 {
+		if deliveryReceiptRequested {
 			segmentsCount := calcSegments(params.DataCoding, params.Text)
 			s.PendingRequests.Store(messageID, PendingRequest{SegmentsCount: segmentsCount, CreatedAt: time.Now()})
 			if s.registerMessageID != nil {
@@ -632,7 +662,7 @@ func (s *Session) handleSubmitSM(
 	if response == nil {
 		response = &SmppResponse{Status: StatusSysErr}
 	}
-	if params.RegisteredDelivery == 1 {
+	if RegisteredDeliveryFlags(params.RegisteredDelivery).RequiresDeliveryReceipt() {
 		segmentsCount := calcSegments(params.DataCoding, params.Text)
 		s.PendingRequests.Store(messageID, PendingRequest{SegmentsCount: segmentsCount, CreatedAt: time.Now()})
 		if s.registerMessageID != nil {
