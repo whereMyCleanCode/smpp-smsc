@@ -647,6 +647,11 @@ func (h *defaultSMPPHandler) HandleBindTransceiver(_ context.Context, params map
 	session.Password = params["password"]
 	session.BindingType = BindingTypeTransceiver
 	session.Bound = true
+	session.logger.Info().
+		Str("handler", "default_smpp").
+		Str("event", "bind_transceiver").
+		Str("system_id", session.SystemID).
+		Msg("mock handler")
 	return StatusOK, nil
 }
 
@@ -655,6 +660,11 @@ func (h *defaultSMPPHandler) HandleBindReceiver(_ context.Context, params map[st
 	session.Password = params["password"]
 	session.BindingType = BindingTypeReceiver
 	session.Bound = true
+	session.logger.Info().
+		Str("handler", "default_smpp").
+		Str("event", "bind_receiver").
+		Str("system_id", session.SystemID).
+		Msg("mock handler")
 	return StatusOK, nil
 }
 
@@ -663,28 +673,63 @@ func (h *defaultSMPPHandler) HandleBindTransmitter(_ context.Context, params map
 	session.Password = params["password"]
 	session.BindingType = BindingTypeTransmitter
 	session.Bound = true
+	session.logger.Info().
+		Str("handler", "default_smpp").
+		Str("event", "bind_transmitter").
+		Str("system_id", session.SystemID).
+		Msg("mock handler")
 	return StatusOK, nil
 }
 
 func (h *defaultSMPPHandler) HandleSubmitSM(_ context.Context, params *SubmitSmParams, session *Session) *SmppResponse {
 	if !session.BindingType.IsTransmitter() {
+		session.logger.Info().
+			Str("handler", "default_smpp").
+			Str("event", "submit_sm").
+			Str("reason", "invalid_binding").
+			Msg("mock handler")
 		return &SmppResponse{Status: StatusInvBnd}
 	}
 	if params.SourceAddr == "" || params.DestAddr == "" {
+		session.logger.Info().
+			Str("handler", "default_smpp").
+			Str("event", "submit_sm").
+			Str("reason", "missing_addresses").
+			Msg("mock handler")
 		return &SmppResponse{Status: StatusInvSrcAdr}
 	}
+	session.logger.Info().
+		Str("handler", "default_smpp").
+		Str("event", "submit_sm").
+		Str("source", params.SourceAddr).
+		Str("destination", params.DestAddr).
+		Msg("mock handler")
 	return &SmppResponse{Status: StatusOK}
 }
 
 func (h *defaultSMPPHandler) HandleUnbind(_ context.Context, session *Session) (uint32, error) {
 	session.Bound = false
+	session.logger.Info().
+		Str("handler", "default_smpp").
+		Str("event", "unbind").
+		Msg("mock handler")
 	return StatusOK, nil
 }
 
-func (h *defaultSMPPHandler) HandleEnquireLink(_ context.Context, _ *Session) (uint32, error) {
+func (h *defaultSMPPHandler) HandleEnquireLink(_ context.Context, session *Session) (uint32, error) {
+	session.logger.Debug().
+		Str("handler", "default_smpp").
+		Str("event", "enquire_link").
+		Msg("mock handler")
 	return StatusOK, nil
 }
 
-func (h *defaultSMPPHandler) HandleDeliverSMResp(_ context.Context, _ uint32, _ uint32, _ *Session) error {
+func (h *defaultSMPPHandler) HandleDeliverSMResp(_ context.Context, sequenceNumber uint32, status uint32, session *Session) error {
+	session.logger.Debug().
+		Str("handler", "default_smpp").
+		Str("event", "deliver_sm_resp").
+		Uint32("sequence", sequenceNumber).
+		Uint32("status", status).
+		Msg("mock handler")
 	return nil
 }

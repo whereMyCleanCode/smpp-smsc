@@ -30,7 +30,9 @@ import (
 	"github.com/whereMyCleanCode/smpp-smsc/internal/smsc"
 )
 
-type demoHandler struct{}
+type demoHandler struct {
+	lgr smsc.Logger
+}
 
 func (h *demoHandler) HandleBindTransceiver(ctx context.Context, params map[string]string, s *smsc.Session) (uint32, error) {
 	s.SystemID = params["system_id"]
@@ -105,7 +107,7 @@ func main() {
 		panic(err)
 	}
 
-	server.SetHandler(&demoHandler{})
+	server.SetHandler(&demoHandler{lgr: logger.WithStr("handler", "demo")})
 	errCh := server.Start()
 
 	sigCh := make(chan os.Signal, 1)

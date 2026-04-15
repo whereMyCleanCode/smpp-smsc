@@ -12,52 +12,108 @@ import (
 
 const appVersion = "dev"
 
-type demoHandler struct{}
+type demoHandler struct {
+	lgr smsc.Logger
+}
 
-func (h *demoHandler) HandleBindTransceiver(ctx context.Context, params map[string]string, session *smsc.Session) (uint32, error) {
+func (h *demoHandler) HandleBindTransceiver(_ context.Context, params map[string]string, session *smsc.Session) (uint32, error) {
 	session.SystemID = params["system_id"]
 	session.Password = params["password"]
 	session.BindingType = smsc.BindingTypeTransceiver
 	session.Bound = true
+	h.lgr.Info().
+		Str("handler", "demo").
+		Str("event", "bind_transceiver").
+		Str("session_id", session.ID).
+		Str("system_id", session.SystemID).
+		Msg("mock handler")
 	return smsc.StatusOK, nil
 }
 
-func (h *demoHandler) HandleBindReceiver(ctx context.Context, params map[string]string, session *smsc.Session) (uint32, error) {
+func (h *demoHandler) HandleBindReceiver(_ context.Context, params map[string]string, session *smsc.Session) (uint32, error) {
 	session.SystemID = params["system_id"]
 	session.Password = params["password"]
 	session.BindingType = smsc.BindingTypeReceiver
 	session.Bound = true
+	h.lgr.Info().
+		Str("handler", "demo").
+		Str("event", "bind_receiver").
+		Str("session_id", session.ID).
+		Str("system_id", session.SystemID).
+		Msg("mock handler")
 	return smsc.StatusOK, nil
 }
 
-func (h *demoHandler) HandleBindTransmitter(ctx context.Context, params map[string]string, session *smsc.Session) (uint32, error) {
+func (h *demoHandler) HandleBindTransmitter(_ context.Context, params map[string]string, session *smsc.Session) (uint32, error) {
 	session.SystemID = params["system_id"]
 	session.Password = params["password"]
 	session.BindingType = smsc.BindingTypeTransmitter
 	session.Bound = true
+	h.lgr.Info().
+		Str("handler", "demo").
+		Str("event", "bind_transmitter").
+		Str("session_id", session.ID).
+		Str("system_id", session.SystemID).
+		Msg("mock handler")
 	return smsc.StatusOK, nil
 }
 
 func (h *demoHandler) HandleSubmitSM(_ context.Context, params *smsc.SubmitSmParams, session *smsc.Session) *smsc.SmppResponse {
 	if !session.BindingType.IsTransmitter() {
+		h.lgr.Info().
+			Str("handler", "demo").
+			Str("event", "submit_sm").
+			Str("session_id", session.ID).
+			Str("reason", "invalid_binding").
+			Msg("mock handler")
 		return &smsc.SmppResponse{Status: smsc.StatusInvBnd}
 	}
 	if params.SourceAddr == "" || params.DestAddr == "" {
+		h.lgr.Info().
+			Str("handler", "demo").
+			Str("event", "submit_sm").
+			Str("session_id", session.ID).
+			Str("reason", "missing_addresses").
+			Msg("mock handler")
 		return &smsc.SmppResponse{Status: smsc.StatusInvSrcAdr}
 	}
+	h.lgr.Info().
+		Str("handler", "demo").
+		Str("event", "submit_sm").
+		Str("session_id", session.ID).
+		Str("source", params.SourceAddr).
+		Str("destination", params.DestAddr).
+		Msg("mock handler")
 	return &smsc.SmppResponse{Status: smsc.StatusOK}
 }
 
 func (h *demoHandler) HandleUnbind(_ context.Context, session *smsc.Session) (uint32, error) {
 	session.Bound = false
+	h.lgr.Info().
+		Str("handler", "demo").
+		Str("event", "unbind").
+		Str("session_id", session.ID).
+		Msg("mock handler")
 	return smsc.StatusOK, nil
 }
 
-func (h *demoHandler) HandleEnquireLink(_ context.Context, _ *smsc.Session) (uint32, error) {
+func (h *demoHandler) HandleEnquireLink(_ context.Context, session *smsc.Session) (uint32, error) {
+	h.lgr.Debug().
+		Str("handler", "demo").
+		Str("event", "enquire_link").
+		Str("session_id", session.ID).
+		Msg("mock handler")
 	return smsc.StatusOK, nil
 }
 
-func (h *demoHandler) HandleDeliverSMResp(_ context.Context, _ uint32, _ uint32, _ *smsc.Session) error {
+func (h *demoHandler) HandleDeliverSMResp(_ context.Context, sequenceNumber uint32, status uint32, session *smsc.Session) error {
+	h.lgr.Debug().
+		Str("handler", "demo").
+		Str("event", "deliver_sm_resp").
+		Str("session_id", session.ID).
+		Uint32("sequence", sequenceNumber).
+		Uint32("status", status).
+		Msg("mock handler")
 	return nil
 }
 
@@ -101,7 +157,7 @@ func main() {
 		WithConfig(cfg).
 		WithLogger(logger).
 		WithIDGenerator(idGen).
-		WithHandler(&demoHandler{})
+		WithHandler(&demoHandler{lgr: logger.WithStr("handler", "demo")})
 
 	server, err := container.BuildServer()
 	if err != nil {

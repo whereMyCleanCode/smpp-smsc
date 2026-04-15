@@ -8,31 +8,67 @@ import (
 
 type containerTestHandler struct{}
 
-func (h *containerTestHandler) HandleBindTransceiver(_ context.Context, _ map[string]string, _ *Session) (uint32, error) {
+func (h *containerTestHandler) HandleBindTransceiver(_ context.Context, params map[string]string, session *Session) (uint32, error) {
+	session.logger.Info().
+		Str("handler", "container_test").
+		Str("event", "bind_transceiver").
+		Str("system_id", params["system_id"]).
+		Msg("mock handler")
 	return StatusOK, nil
 }
 
-func (h *containerTestHandler) HandleBindReceiver(_ context.Context, _ map[string]string, _ *Session) (uint32, error) {
+func (h *containerTestHandler) HandleBindReceiver(_ context.Context, params map[string]string, session *Session) (uint32, error) {
+	session.logger.Info().
+		Str("handler", "container_test").
+		Str("event", "bind_receiver").
+		Str("system_id", params["system_id"]).
+		Msg("mock handler")
 	return StatusOK, nil
 }
 
-func (h *containerTestHandler) HandleBindTransmitter(_ context.Context, _ map[string]string, _ *Session) (uint32, error) {
+func (h *containerTestHandler) HandleBindTransmitter(_ context.Context, params map[string]string, session *Session) (uint32, error) {
+	session.logger.Info().
+		Str("handler", "container_test").
+		Str("event", "bind_transmitter").
+		Str("system_id", params["system_id"]).
+		Msg("mock handler")
 	return StatusOK, nil
 }
 
-func (h *containerTestHandler) HandleSubmitSM(_ context.Context, _ *SubmitSmParams, _ *Session) *SmppResponse {
+func (h *containerTestHandler) HandleSubmitSM(_ context.Context, params *SubmitSmParams, session *Session) *SmppResponse {
+	session.logger.Info().
+		Str("handler", "container_test").
+		Str("event", "submit_sm").
+		Str("source", params.SourceAddr).
+		Str("destination", params.DestAddr).
+		Str("text", params.Text).
+		Msg("mock handler")
 	return &SmppResponse{Status: StatusOK}
 }
 
-func (h *containerTestHandler) HandleUnbind(_ context.Context, _ *Session) (uint32, error) {
+func (h *containerTestHandler) HandleUnbind(_ context.Context, session *Session) (uint32, error) {
+	session.logger.Info().
+		Str("handler", "container_test").
+		Str("event", "unbind").
+		Msg("mock handler")
 	return StatusOK, nil
 }
 
-func (h *containerTestHandler) HandleEnquireLink(_ context.Context, _ *Session) (uint32, error) {
+func (h *containerTestHandler) HandleEnquireLink(_ context.Context, session *Session) (uint32, error) {
+	session.logger.Debug().
+		Str("handler", "container_test").
+		Str("event", "enquire_link").
+		Msg("mock handler")
 	return StatusOK, nil
 }
 
-func (h *containerTestHandler) HandleDeliverSMResp(_ context.Context, _ uint32, _ uint32, _ *Session) error {
+func (h *containerTestHandler) HandleDeliverSMResp(_ context.Context, sequenceNumber uint32, status uint32, session *Session) error {
+	session.logger.Debug().
+		Str("handler", "container_test").
+		Str("event", "deliver_sm_resp").
+		Uint32("sequence", sequenceNumber).
+		Uint32("status", status).
+		Msg("mock handler")
 	return nil
 }
 

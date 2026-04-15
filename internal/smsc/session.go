@@ -23,6 +23,11 @@ import (
 
 var maxSequence uint32
 
+// sessionWriteBatchMax is the maximum number of outbound PDUs coalesced into one
+// bufio flush per outgoing loop iteration (single writer per session; bursty enqueue
+// amortizes syscall cost without holding writeMutex while reading the queue).
+const sessionWriteBatchMax = 32
+
 func init() {
 	maxSequence = 0x7FFFFFFF
 }
@@ -279,14 +284,39 @@ func (s *Session) outgoingHandler() {
 			if body == nil {
 				continue
 			}
-			if err := s.sendPDU(body); err != nil {
-				s.logger.Warn().Err(err).Msg("send PDU failed")
+			batch := s.drainOutgoingPDUBatch(body)
+			if err := s.sendPDUBatch(batch); err != nil {
+				s.logger.Warn().Err(err).Int("batch_size", len(batch)).Msg("send PDU batch failed")
 			}
 		}
 	}
 }
 
-func (s *Session) sendPDU(body pdu.Body) error {
+// drainOutgoingPDUBatch returns a batch starting with first, draining the queue without blocking
+// beyond what is already available, up to sessionWriteBatchMax PDUs total.
+func (s *Session) drainOutgoingPDUBatch(first pdu.Body) []pdu.Body {
+	batch := make([]pdu.Body, 0, sessionWriteBatchMax)
+	batch = append(batch, first)
+	for len(batch) < sessionWriteBatchMax {
+		select {
+		case b := <-s.pduQueue:
+			if b == nil {
+				continue
+			}
+			batch = append(batch, b)
+		default:
+			return batch
+		}
+	}
+	return batch
+}
+
+// sendPDUBatch serializes bodies in order, then writes them under a single writeMutex
+// and one bufio flush.
+func (s *Session) sendPDUBatch(bodies []pdu.Body) error {
+	if len(bodies) == 0 {
+		return nil
+	}
 	select {
 	case <-s.ctx.Done():
 		return ErrSessionClosed
@@ -301,8 +331,10 @@ func (s *Session) sendPDU(body pdu.Body) error {
 	}
 
 	var payload bytes.Buffer
-	if err := body.SerializeTo(&payload); err != nil {
-		return err
+	for _, body := range bodies {
+		if err := body.SerializeTo(&payload); err != nil {
+			return err
+		}
 	}
 
 	s.writeMutex.Lock()
@@ -314,8 +346,12 @@ func (s *Session) sendPDU(body pdu.Body) error {
 	if err := s.Writer.Flush(); err != nil {
 		return err
 	}
-	atomic.AddInt64(&s.MessagesSent, 1)
+	atomic.AddInt64(&s.MessagesSent, int64(len(bodies)))
 	return nil
+}
+
+func (s *Session) sendPDU(body pdu.Body) error {
+	return s.sendPDUBatch([]pdu.Body{body})
 }
 
 func (s *Session) processPDU(pkt pdu.Body) {
