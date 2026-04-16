@@ -64,10 +64,11 @@ type Session struct {
 
 	segmentsMgr *SegmentsManager
 
-	errCh           chan error
-	stopCh          chan struct{}
-	pduQueue        chan pdu.Body
-	PendingRequests sync.Map
+	errCh                      chan error
+	stopCh                     chan struct{}
+	pduQueue                   chan pdu.Body
+	PendingRequests            sync.Map
+	PendingRequestsCleanTicker *time.Ticker
 
 	handler SMPPHandler
 
@@ -109,6 +110,7 @@ func (s *Session) start() {
 
 	go s.outgoingHandler()
 	go s.segmentsMgr.startCleanupRoutine(s.ctx.Done())
+	go s.cleanupPendingRequests()
 
 	for {
 		select {
@@ -373,6 +375,7 @@ func (s *Session) processPDU(pkt pdu.Body) {
 		case pdu.DeliverSMRespID:
 			if s.handler != nil {
 				_ = s.handler.HandleDeliverSMResp(s.ctx, seq, uint32(pkt.Header().Status), s)
+				s.PendingRequests.Delete(seq)
 			}
 		default:
 			s.PendingRequests.Delete(seq)
@@ -875,4 +878,32 @@ func isNetTimeout(err error) bool {
 		return netErr.Timeout()
 	}
 	return false
+}
+
+func (s *Session) cleanupPendingRequests() {
+	for {
+		select {
+		case <-s.ctx.Done():
+			break
+		case _ = <-s.PendingRequestsCleanTicker.C:
+			if !s.Bound {
+				break
+			}
+
+			s.PendingRequests.Range(func(k, v interface{}) bool {
+				if val, ok := v.(PendingRequest); ok {
+					if !s.Bound {
+						return false
+					}
+
+					if val.RegisteredDelivery > 0 {
+						if time.Since(val.CreatedAt) >= s.cfg.PendingRequestTtl {
+							s.PendingRequests.Delete(k)
+						}
+					}
+				}
+				return true
+			})
+		}
+	}
 }

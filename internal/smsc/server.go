@@ -17,6 +17,9 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// TODO: move in cfg and setter
+const pendingRequestsCleanupInterval = time.Hour
+
 type Server struct {
 	mu sync.Mutex
 
@@ -198,25 +201,26 @@ func (s *Server) handleConnection(conn net.Conn) {
 	sessionID := s.generateSessionID()
 
 	session := &Session{
-		ID:                sessionID,
-		PodID:             s.cfg.PodID,
-		Address:           conn.RemoteAddr().String(),
-		Conn:              conn,
-		Reader:            bufio.NewReaderSize(conn, s.cfg.DecoderBufferSize),
-		Writer:            bufio.NewWriterSize(conn, s.cfg.DecoderBufferSize),
-		Bound:             false,
-		BindingType:       BindingTypeNone,
-		handler:           s.handler,
-		cfg:               s.cfg,
-		logger:            s.lgr.With().Str("session_id", sessionID).Str("client_addr", conn.RemoteAddr().String()).Logger(),
-		pduQueue:          make(chan pdu.Body, maxInt(64, s.cfg.WindowSize)),
-		errCh:             make(chan error, 1),
-		stopCh:            make(chan struct{}),
-		ctx:               ctx,
-		cancel:            cancel,
-		lastActivityNanos: now.UnixNano(),
-		segmentsMgr:       NewSegmentsManager(s.lgr, s.cfg.SegsBucketTtl, s.idGenerator, s.cfg.MaxSubmitSMSegments),
-		rateLimiter:       rate.NewLimiter(rate.Limit(maxInt(1, s.cfg.DefaultMaxRPSLimit)), maxInt(1, s.cfg.DefaultBurstRPSLimit)),
+		ID:                         sessionID,
+		PodID:                      s.cfg.PodID,
+		Address:                    conn.RemoteAddr().String(),
+		Conn:                       conn,
+		Reader:                     bufio.NewReaderSize(conn, s.cfg.DecoderBufferSize),
+		Writer:                     bufio.NewWriterSize(conn, s.cfg.DecoderBufferSize),
+		Bound:                      false,
+		BindingType:                BindingTypeNone,
+		handler:                    s.handler,
+		cfg:                        s.cfg,
+		logger:                     s.lgr.With().Str("session_id", sessionID).Str("client_addr", conn.RemoteAddr().String()).Logger(),
+		pduQueue:                   make(chan pdu.Body, maxInt(64, s.cfg.WindowSize)),
+		errCh:                      make(chan error, 1),
+		stopCh:                     make(chan struct{}),
+		ctx:                        ctx,
+		cancel:                     cancel,
+		lastActivityNanos:          now.UnixNano(),
+		segmentsMgr:                NewSegmentsManager(s.lgr, s.cfg.SegsBucketTtl, s.idGenerator, s.cfg.MaxSubmitSMSegments),
+		PendingRequestsCleanTicker: time.NewTicker(pendingRequestsCleanupInterval),
+		rateLimiter:                rate.NewLimiter(rate.Limit(maxInt(1, s.cfg.DefaultMaxRPSLimit)), maxInt(1, s.cfg.DefaultBurstRPSLimit)),
 	}
 
 	session.registerMessageID = func(messageID uint64) {
@@ -430,7 +434,6 @@ func (s *Server) SendDeliveryReport(
 		return 0, err
 	}
 
-	session.RemovePendingRequestByMessageID(internalMessageID)
 	return DeliveryReportSent, nil
 }
 

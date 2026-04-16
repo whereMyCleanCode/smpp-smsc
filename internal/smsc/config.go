@@ -26,6 +26,8 @@ type Config struct {
 	SegsBucketTtl       time.Duration
 	MaxEnquireLinkRetry int
 
+	PendingRequestTtl time.Duration `default:"74h"`
+
 	WindowSize        int
 	DecoderBufferSize int
 	MaxWriteWorkers   int
