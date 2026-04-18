@@ -734,5 +734,16 @@ func (h *defaultSMPPHandler) HandleDeliverSMResp(_ context.Context, sequenceNumb
 		Uint32("sequence", sequenceNumber).
 		Uint32("status", status).
 		Msg("mock handler")
+	if val, ok := session.PendingRequests.Load(sequenceNumber); ok {
+		if v, ok := val.(*PendingRequest); ok {
+			if v.RegisteredDelivery <= 0 {
+				return ErrInvalidPDU
+			}
+		}
+		if status != StatusOK {
+			session.logger.Info().Str("session_id", session.ID).Msg("session can't receive DLR")
+		}
+	}
+
 	return nil
 }
