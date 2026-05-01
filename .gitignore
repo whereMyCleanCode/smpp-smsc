@@ -1,0 +1,6 @@
+extensions.json
+.vscode
+.idea
+
+# AI assistant context (hidden from git)
+.koda/
