@@ -3,4 +3,5 @@ extensions.json
 .idea
 
 # AI assistant context (hidden from git)
-.koda/
+KODA.MD
+.koda/*
