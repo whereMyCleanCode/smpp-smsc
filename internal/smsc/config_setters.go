@@ -97,6 +97,11 @@ func (c *Config) SetMaxSubmitSMSegments(limit int) *Config {
 	return c
 }
 
+func (c *Config) SetMaxMessagePayloadLen(limit int) *Config {
+	c.MaxMessagePayloadLen = limit
+	return c
+}
+
 func (c *Config) SetTCPNoDelay(enabled bool) *Config {
 	c.TCPNoDelay = enabled
 	return c

@@ -220,7 +220,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		lastActivityNanos:          now.UnixNano(),
 		segmentsMgr:                NewSegmentsManager(s.lgr, s.cfg.SegsBucketTtl, s.idGenerator, s.cfg.MaxSubmitSMSegments),
 		PendingRequestsCleanTicker: time.NewTicker(pendingRequestsCleanupInterval),
-		rateLimiter:                rate.NewLimiter(rate.Limit(maxInt(1, s.cfg.DefaultMaxRPSLimit)), maxInt(1, s.cfg.DefaultBurstRPSLimit)),
+		rateLimiter:                rate.NewLimiter(rate.Limit(maxInt(1, s.cfg.Max)), maxInt(1, s.cfg.DefaultBurstRPSLimit)),
 	}
 
 	session.registerMessageID = func(messageID uint64) {

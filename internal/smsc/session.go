@@ -542,6 +542,16 @@ func (s *Session) handleSubmitSMPDU(pkt pdu.Body) {
 		return
 	}
 
+	if s.cfg.MaxMessagePayloadLen > 0 && len(params.MessagePayload) > s.cfg.MaxMessagePayloadLen {
+		s.logger.Warn().
+			Str("session_id", s.ID).
+			Int("message_payload_len", len(params.MessagePayload)).
+			Int("max_allowed", s.cfg.MaxMessagePayloadLen).
+			Msg("message_payload exceeds max length; rejecting")
+		s.sendSubmitSMResponse(pkt.Header().Seq, &SmppResponse{Status: StatusInvMsgLen}, "")
+		return
+	}
+
 	s.RegisteredDelivery = RegisteredDeliveryFlags(params.RegisteredDelivery)
 
 	messageID, response, handleErr := s.handleSubmitSM(params, s.handler.HandleSubmitSM)
@@ -625,14 +635,14 @@ func parseSubmitSM(pkt pdu.Body) (*SubmitSmParams, uint32, error) {
 	}
 
 	if payload, ok := params.TLVParams[TagMessagePayload]; ok && len(payload) > 0 {
-		params.ShortMessage = append([]byte(nil), payload...)
+		params.MessagePayload = append([]byte(nil), payload...)
 		params.WithPayload = true
 	}
 
 	if udhList, ok := fields[pdufield.GSMUserData].(*pdufield.UDHList); ok && len(udhList.Data) > 0 {
 		segment := &MessageSegment{
 			RegisteredAt: time.Now(),
-			Text:         append([]byte(nil), params.ShortMessage...),
+			Text:         append([]byte(nil), params.GetMessage()...),
 		}
 		for _, udh := range udhList.Data {
 			iei := udh.IEI.Data
@@ -670,7 +680,24 @@ func parseSubmitSM(pkt pdu.Body) (*SubmitSmParams, uint32, error) {
 		if seqNum, ok := params.GetTLVUint16(TagSarSegmentSeqnum); ok {
 			params.Segment.SegmentSeqNum = uint8(seqNum)
 		}
-		params.Segment.Text = append([]byte(nil), params.ShortMessage...)
+		params.Segment.Text = append([]byte(nil), params.GetMessage()...)
+	}
+
+	// Если message_payload есть и UDH не найден, пробуем распарсить UDH внутри message_payload
+	if params.WithPayload && params.Segment == nil && len(params.MessagePayload) > 0 {
+		if messageRef, total, seq, err := ParseUDH(params.MessagePayload); err == nil && total > 1 && seq > 0 {
+			if params.Segment == nil {
+				params.Segment = &MessageSegment{
+					RegisteredAt: time.Now(),
+				}
+			}
+			params.Segment.MessageRefNum = uint8(messageRef & 0xFF)
+			params.Segment.SegmentsCount = uint8(total)
+			params.Segment.SegmentSeqNum = uint8(seq)
+			// Очищаем UDH из payload перед сохранением текста
+			udhLen := int(params.MessagePayload[0]) + 1
+			params.Segment.Text = append([]byte(nil), params.MessagePayload[udhLen:]...)
+		}
 	}
 
 	if params.Segment == nil {
@@ -781,7 +808,7 @@ func (s *Session) handleSubmitSM(
 	}
 	params.MessageID = messageID
 	if params.Text == "" {
-		text, derr := DecodeMessage(params.ShortMessage, params.DataCoding)
+		text, derr := DecodeMessage(params.GetMessage(), params.DataCoding)
 		if derr != nil {
 			return messageID, &SmppResponse{Status: StatusInvDataCoding}, derr
 		}

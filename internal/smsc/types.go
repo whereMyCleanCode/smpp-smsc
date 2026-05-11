@@ -74,7 +74,6 @@ func (r RegisteredDeliveryFlags) ShouldSendDeliveryReceipt(success bool) bool {
 type SubmitSmParams struct {
 	MessageID uint64
 
-	// submit_sm mandatory fields
 	ServiceType string
 
 	SourceAddrTON uint8
@@ -97,15 +96,32 @@ type SubmitSmParams struct {
 
 	SeqNum uint32
 
+	// ShortMessage is the mandatory short_message field (max 255 bytes).
+	// If message_payload TLV is present, this field is ignored per SMPP 3.4 spec.
 	ShortMessage []byte
-	Text         string
-	WithPayload  bool
+	// Text is the decoded message text (after DecodeMessage).
+	Text string
+	// WithPayload indicates that message_payload TLV was present.
+	WithPayload bool
+	// MessagePayload holds the optional TLV message_payload (0x0424) value when present.
+	// According to SMPP 3.4, if message_payload is present, short_message must be ignored.
+	MessagePayload []byte
 
 	Segment *MessageSegment
 
 	TemplateID *uint64
 
+	// TLVParams contains all optional TLVs from submit_sm.
 	TLVParams map[uint16][]byte
+}
+
+// GetMessage returns the effective message bytes: message_payload takes priority
+// over short_message per SMPP 3.4 spec (section 4.6.3).
+func (p *SubmitSmParams) GetMessage() []byte {
+	if len(p.MessagePayload) > 0 {
+		return p.MessagePayload
+	}
+	return p.ShortMessage
 }
 
 func (p *SubmitSmParams) GetTLVString(tag uint16) (string, bool) {

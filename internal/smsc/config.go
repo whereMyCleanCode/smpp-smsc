@@ -40,6 +40,9 @@ type Config struct {
 	// accepted per logical message. Default 10; configurable up to 25 (hard cap). Not related to
 	// DefaultMaxSegsCount, which limits outgoing Deliver SM text length before splitting.
 	MaxSubmitSMSegments int
+	// MaxMessagePayloadLen is the maximum allowed length of the optional message_payload TLV (0x0424).
+	// A value of 0 means no limit is enforced. Default 4096.
+	MaxMessagePayloadLen int
 
 	TCPNoDelay         bool
 	TCPKeepAlive       bool
@@ -72,6 +75,7 @@ func DefaultConfig() *Config {
 		DefaultBurstRPSLimit: 1800,
 		DefaultMaxSegsCount:  200,
 		MaxSubmitSMSegments:  10,
+		MaxMessagePayloadLen: 4096,
 		TCPNoDelay:           true,
 		TCPKeepAlive:         true,
 		TCPKeepAlivePeriod:   60 * time.Second,
