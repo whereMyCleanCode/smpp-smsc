@@ -94,6 +94,14 @@ type Session struct {
 	replaceSubmitLast map[string]uint64
 }
 
+// SetRateLimiter sets or replaces the rate limiter for this session at runtime.
+// Pass nil to disable rate limiting for this session.
+func (s *Session) SetRateLimiter(limiter *rate.Limiter) {
+	s.sessionMutex.Lock()
+	defer s.sessionMutex.Unlock()
+	s.rateLimiter = limiter
+}
+
 func (s *Session) start() {
 	if s.pduQueue == nil {
 		s.pduQueue = make(chan pdu.Body, maxInt(64, s.cfg.WindowSize))

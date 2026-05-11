@@ -35,6 +35,9 @@ type Server struct {
 	cancel       context.CancelFunc
 	shutdownWait sync.WaitGroup
 	handler      SMPPHandler
+
+	// globalRateLimiter is an optional shared rate limiter applied across all sessions.
+	globalRateLimiter *rate.Limiter
 }
 
 func NewServer(cfg *Config, lgr Logger, idGenerator IDGenerator) (*Server, error) {
@@ -78,6 +81,12 @@ func (s *Server) SetHandler(handler SMPPHandler) {
 	s.handler = handler
 }
 
+// SetGlobalRateLimiter sets a custom global rate limiter for all sessions.
+// If nil, per-session rate limiters are used based on config.
+func (s *Server) SetGlobalRateLimiter(limiter *rate.Limiter) {
+	s.globalRateLimiter = limiter
+}
+
 func (s *Server) Start() chan error {
 	errCh := make(chan error, 1)
 
@@ -98,6 +107,15 @@ func (s *Server) Start() chan error {
 			Int("max_rps_limit", s.cfg.DefaultMaxRPSLimit).
 			Int("burst_rps_limit", s.cfg.DefaultBurstRPSLimit).
 			Msg("runtime limits")
+
+		s.lgr.Info().
+			Bool("global_rate_limiter_enabled", s.cfg.GlobalRateLimiterEnabled).
+			Bool("per_session_rate_limiter_enabled", s.cfg.PerSessionRateLimiterEnabled).
+			Int("global_max_rps", s.cfg.GlobalMaxRPSLimit).
+			Int("global_burst_rps", s.cfg.GlobalBurstRPSLimit).
+			Int("default_max_rps", s.cfg.DefaultMaxRPSLimit).
+			Int("default_burst_rps", s.cfg.DefaultBurstRPSLimit).
+			Msg("rate limiter settings")
 
 		s.lgr.Info().
 			Bool("tcp_nodelay", s.cfg.TCPNoDelay).
@@ -200,6 +218,26 @@ func (s *Server) handleConnection(conn net.Conn) {
 	now := time.Now()
 	sessionID := s.generateSessionID()
 
+	// Create rate limiter based on configuration
+	var sessionRateLimiter *rate.Limiter
+	if s.globalRateLimiter != nil {
+		// Use global rate limiter if set via SetGlobalRateLimiter
+		sessionRateLimiter = s.globalRateLimiter
+	} else if s.cfg.GlobalRateLimiterEnabled && s.cfg.GlobalMaxRPSLimit > 0 {
+		// Use global rate limiter from config
+		sessionRateLimiter = rate.NewLimiter(
+			rate.Limit(maxInt(1, s.cfg.GlobalMaxRPSLimit)),
+			maxInt(1, s.cfg.GlobalBurstRPSLimit),
+		)
+	} else if s.cfg.PerSessionRateLimiterEnabled {
+		// Use per-session rate limiter
+		sessionRateLimiter = rate.NewLimiter(
+			rate.Limit(maxInt(1, s.cfg.DefaultMaxRPSLimit)),
+			maxInt(1, s.cfg.DefaultBurstRPSLimit),
+		)
+	}
+	// If all disabled, sessionRateLimiter remains nil (no rate limiting)
+
 	session := &Session{
 		ID:                         sessionID,
 		PodID:                      s.cfg.PodID,
@@ -220,7 +258,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		lastActivityNanos:          now.UnixNano(),
 		segmentsMgr:                NewSegmentsManager(s.lgr, s.cfg.SegsBucketTtl, s.idGenerator, s.cfg.MaxSubmitSMSegments),
 		PendingRequestsCleanTicker: time.NewTicker(pendingRequestsCleanupInterval),
-		rateLimiter:                rate.NewLimiter(rate.Limit(maxInt(1, s.cfg.Max)), maxInt(1, s.cfg.DefaultBurstRPSLimit)),
+		rateLimiter:                sessionRateLimiter,
 	}
 
 	session.registerMessageID = func(messageID uint64) {

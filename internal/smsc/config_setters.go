@@ -77,6 +77,28 @@ func (c *Config) SetMaxReadWorkers(count int) *Config {
 	return c
 }
 
+// SetGlobalRateLimiterEnabled enables or disables the global rate limiter.
+func (c *Config) SetGlobalRateLimiterEnabled(enabled bool) *Config {
+	c.GlobalRateLimiterEnabled = enabled
+	return c
+}
+
+func (c *Config) SetGlobalMaxRPSLimit(limit int) *Config {
+	c.GlobalMaxRPSLimit = limit
+	return c
+}
+
+func (c *Config) SetGlobalBurstRPSLimit(limit int) *Config {
+	c.GlobalBurstRPSLimit = limit
+	return c
+}
+
+// SetPerSessionRateLimiterEnabled enables or disables per-session rate limiters.
+func (c *Config) SetPerSessionRateLimiterEnabled(enabled bool) *Config {
+	c.PerSessionRateLimiterEnabled = enabled
+	return c
+}
+
 func (c *Config) SetDefaultMaxRPSLimit(limit int) *Config {
 	c.DefaultMaxRPSLimit = limit
 	return c
