@@ -23,6 +23,11 @@ import (
 
 var maxSequence uint32
 
+// sessionWriteBatchMax is the maximum number of outbound PDUs coalesced into one
+// bufio flush per outgoing loop iteration (single writer per session; bursty enqueue
+// amortizes syscall cost without holding writeMutex while reading the queue).
+const sessionWriteBatchMax = 32
+
 func init() {
 	maxSequence = 0x7FFFFFFF
 }
@@ -59,10 +64,11 @@ type Session struct {
 
 	segmentsMgr *SegmentsManager
 
-	errCh           chan error
-	stopCh          chan struct{}
-	pduQueue        chan pdu.Body
-	PendingRequests sync.Map
+	errCh                      chan error
+	stopCh                     chan struct{}
+	pduQueue                   chan pdu.Body
+	PendingRequests            sync.Map
+	PendingRequestsCleanTicker *time.Ticker
 
 	handler SMPPHandler
 
@@ -88,6 +94,14 @@ type Session struct {
 	replaceSubmitLast map[string]uint64
 }
 
+// SetRateLimiter sets or replaces the rate limiter for this session at runtime.
+// Pass nil to disable rate limiting for this session.
+func (s *Session) SetRateLimiter(limiter *rate.Limiter) {
+	s.sessionMutex.Lock()
+	defer s.sessionMutex.Unlock()
+	s.rateLimiter = limiter
+}
+
 func (s *Session) start() {
 	if s.pduQueue == nil {
 		s.pduQueue = make(chan pdu.Body, maxInt(64, s.cfg.WindowSize))
@@ -104,6 +118,7 @@ func (s *Session) start() {
 
 	go s.outgoingHandler()
 	go s.segmentsMgr.startCleanupRoutine(s.ctx.Done())
+	go s.cleanupPendingRequests()
 
 	for {
 		select {
@@ -279,14 +294,39 @@ func (s *Session) outgoingHandler() {
 			if body == nil {
 				continue
 			}
-			if err := s.sendPDU(body); err != nil {
-				s.logger.Warn().Err(err).Msg("send PDU failed")
+			batch := s.drainOutgoingPDUBatch(body)
+			if err := s.sendPDUBatch(batch); err != nil {
+				s.logger.Warn().Err(err).Int("batch_size", len(batch)).Msg("send PDU batch failed")
 			}
 		}
 	}
 }
 
-func (s *Session) sendPDU(body pdu.Body) error {
+// drainOutgoingPDUBatch returns a batch starting with first, draining the queue without blocking
+// beyond what is already available, up to sessionWriteBatchMax PDUs total.
+func (s *Session) drainOutgoingPDUBatch(first pdu.Body) []pdu.Body {
+	batch := make([]pdu.Body, 0, sessionWriteBatchMax)
+	batch = append(batch, first)
+	for len(batch) < sessionWriteBatchMax {
+		select {
+		case b := <-s.pduQueue:
+			if b == nil {
+				continue
+			}
+			batch = append(batch, b)
+		default:
+			return batch
+		}
+	}
+	return batch
+}
+
+// sendPDUBatch serializes bodies in order, then writes them under a single writeMutex
+// and one bufio flush.
+func (s *Session) sendPDUBatch(bodies []pdu.Body) error {
+	if len(bodies) == 0 {
+		return nil
+	}
 	select {
 	case <-s.ctx.Done():
 		return ErrSessionClosed
@@ -301,8 +341,10 @@ func (s *Session) sendPDU(body pdu.Body) error {
 	}
 
 	var payload bytes.Buffer
-	if err := body.SerializeTo(&payload); err != nil {
-		return err
+	for _, body := range bodies {
+		if err := body.SerializeTo(&payload); err != nil {
+			return err
+		}
 	}
 
 	s.writeMutex.Lock()
@@ -314,8 +356,12 @@ func (s *Session) sendPDU(body pdu.Body) error {
 	if err := s.Writer.Flush(); err != nil {
 		return err
 	}
-	atomic.AddInt64(&s.MessagesSent, 1)
+	atomic.AddInt64(&s.MessagesSent, int64(len(bodies)))
 	return nil
+}
+
+func (s *Session) sendPDU(body pdu.Body) error {
+	return s.sendPDUBatch([]pdu.Body{body})
 }
 
 func (s *Session) processPDU(pkt pdu.Body) {
@@ -337,6 +383,7 @@ func (s *Session) processPDU(pkt pdu.Body) {
 		case pdu.DeliverSMRespID:
 			if s.handler != nil {
 				_ = s.handler.HandleDeliverSMResp(s.ctx, seq, uint32(pkt.Header().Status), s)
+				s.PendingRequests.Delete(seq)
 			}
 		default:
 			s.PendingRequests.Delete(seq)
@@ -363,7 +410,7 @@ func (s *Session) processPDU(pkt pdu.Body) {
 }
 
 func (s *Session) sendEnquireLinkReq() error {
-	if s.getEnquireRetryCount() >= s.cfg.MaxEnquireLinkRetryCount {
+	if s.getEnquireRetryCount() >= s.cfg.MaxEnquireLinkRetry {
 		return fmt.Errorf("max enquire_link retries exceeded")
 	}
 
@@ -503,6 +550,16 @@ func (s *Session) handleSubmitSMPDU(pkt pdu.Body) {
 		return
 	}
 
+	if s.cfg.MaxMessagePayloadLen > 0 && len(params.MessagePayload) > s.cfg.MaxMessagePayloadLen {
+		s.logger.Warn().
+			Str("session_id", s.ID).
+			Int("message_payload_len", len(params.MessagePayload)).
+			Int("max_allowed", s.cfg.MaxMessagePayloadLen).
+			Msg("message_payload exceeds max length; rejecting")
+		s.sendSubmitSMResponse(pkt.Header().Seq, &SmppResponse{Status: StatusInvMsgLen}, "")
+		return
+	}
+
 	s.RegisteredDelivery = RegisteredDeliveryFlags(params.RegisteredDelivery)
 
 	messageID, response, handleErr := s.handleSubmitSM(params, s.handler.HandleSubmitSM)
@@ -586,14 +643,14 @@ func parseSubmitSM(pkt pdu.Body) (*SubmitSmParams, uint32, error) {
 	}
 
 	if payload, ok := params.TLVParams[TagMessagePayload]; ok && len(payload) > 0 {
-		params.ShortMessage = append([]byte(nil), payload...)
+		params.MessagePayload = append([]byte(nil), payload...)
 		params.WithPayload = true
 	}
 
 	if udhList, ok := fields[pdufield.GSMUserData].(*pdufield.UDHList); ok && len(udhList.Data) > 0 {
 		segment := &MessageSegment{
 			RegisteredAt: time.Now(),
-			Text:         append([]byte(nil), params.ShortMessage...),
+			Text:         append([]byte(nil), params.GetMessage()...),
 		}
 		for _, udh := range udhList.Data {
 			iei := udh.IEI.Data
@@ -631,7 +688,24 @@ func parseSubmitSM(pkt pdu.Body) (*SubmitSmParams, uint32, error) {
 		if seqNum, ok := params.GetTLVUint16(TagSarSegmentSeqnum); ok {
 			params.Segment.SegmentSeqNum = uint8(seqNum)
 		}
-		params.Segment.Text = append([]byte(nil), params.ShortMessage...)
+		params.Segment.Text = append([]byte(nil), params.GetMessage()...)
+	}
+
+	// Если message_payload есть и UDH не найден, пробуем распарсить UDH внутри message_payload
+	if params.WithPayload && params.Segment == nil && len(params.MessagePayload) > 0 {
+		if messageRef, total, seq, err := ParseUDH(params.MessagePayload); err == nil && total > 1 && seq > 0 {
+			if params.Segment == nil {
+				params.Segment = &MessageSegment{
+					RegisteredAt: time.Now(),
+				}
+			}
+			params.Segment.MessageRefNum = uint8(messageRef & 0xFF)
+			params.Segment.SegmentsCount = uint8(total)
+			params.Segment.SegmentSeqNum = uint8(seq)
+			// Очищаем UDH из payload перед сохранением текста
+			udhLen := int(params.MessagePayload[0]) + 1
+			params.Segment.Text = append([]byte(nil), params.MessagePayload[udhLen:]...)
+		}
 	}
 
 	if params.Segment == nil {
@@ -742,7 +816,7 @@ func (s *Session) handleSubmitSM(
 	}
 	params.MessageID = messageID
 	if params.Text == "" {
-		text, derr := DecodeMessage(params.ShortMessage, params.DataCoding)
+		text, derr := DecodeMessage(params.GetMessage(), params.DataCoding)
 		if derr != nil {
 			return messageID, &SmppResponse{Status: StatusInvDataCoding}, derr
 		}
@@ -839,4 +913,32 @@ func isNetTimeout(err error) bool {
 		return netErr.Timeout()
 	}
 	return false
+}
+
+func (s *Session) cleanupPendingRequests() {
+	for {
+		select {
+		case <-s.ctx.Done():
+			break
+		case _ = <-s.PendingRequestsCleanTicker.C:
+			if !s.Bound {
+				break
+			}
+
+			s.PendingRequests.Range(func(k, v interface{}) bool {
+				if val, ok := v.(PendingRequest); ok {
+					if !s.Bound {
+						return false
+					}
+
+					if val.RegisteredDelivery > 0 {
+						if time.Since(val.CreatedAt) >= s.cfg.PendingRequestTtl {
+							s.PendingRequests.Delete(k)
+						}
+					}
+				}
+				return true
+			})
+		}
+	}
 }

@@ -6,7 +6,28 @@ import (
 	"time"
 )
 
-const defaultSegmentsCount = 10
+const (
+	minSubmitSMSegmentsCap = 2
+	maxSubmitSMSegmentsCap = 25
+)
+
+func normalizeMaxSubmitSMSegments(lgr Logger, n int) int {
+	if n < minSubmitSMSegmentsCap {
+		lgr.Warn().
+			Int("requested", n).
+			Int("using", minSubmitSMSegmentsCap).
+			Msg("max submit_sm segments below minimum; clamped")
+		return minSubmitSMSegmentsCap
+	}
+	if n > maxSubmitSMSegmentsCap {
+		lgr.Warn().
+			Int("requested", n).
+			Int("using", maxSubmitSMSegmentsCap).
+			Msg("max submit_sm segments above maximum; clamped")
+		return maxSubmitSMSegmentsCap
+	}
+	return n
+}
 
 type segmentsMeta struct {
 	CreatedAt         time.Time
@@ -15,8 +36,7 @@ type segmentsMeta struct {
 
 type segmentGroup struct {
 	meta     segmentsMeta
-	list     [defaultSegmentsCount]*MessageSegment
-	bitmap   uint16
+	list     []*MessageSegment
 	count    uint8
 	expected uint8
 	// OR-accumulated delivery receipt request across all received segments in group.
@@ -27,8 +47,12 @@ func (g *segmentGroup) isComplete() bool {
 	if g.count != g.expected {
 		return false
 	}
-	expectedBitmap := uint16((1 << g.expected) - 1)
-	return g.bitmap == expectedBitmap
+	for i := uint8(0); i < g.expected; i++ {
+		if int(i) >= len(g.list) || g.list[i] == nil {
+			return false
+		}
+	}
+	return true
 }
 
 type segmentShard struct {
@@ -41,15 +65,17 @@ type SegmentsManager struct {
 
 	logger Logger
 
+	maxSegments   int
 	maxSegmentAge time.Duration
 	cleanupTicker *time.Ticker
 	idGenerator   IDGenerator
 }
 
-func NewSegmentsManager(lgr Logger, segmentTTL time.Duration, generator IDGenerator) *SegmentsManager {
+func NewSegmentsManager(lgr Logger, segmentTTL time.Duration, generator IDGenerator, maxSegments int) *SegmentsManager {
 	if segmentTTL <= 0 {
 		segmentTTL = 3 * time.Minute
 	}
+	maxSegments = normalizeMaxSubmitSMSegments(lgr, maxSegments)
 	shards := [256]*segmentShard{}
 	for i := range shards {
 		shards[i] = &segmentShard{
@@ -58,6 +84,7 @@ func NewSegmentsManager(lgr Logger, segmentTTL time.Duration, generator IDGenera
 	}
 	return &SegmentsManager{
 		logger:        lgr.WithStr("component", "segments_manager"),
+		maxSegments:   maxSegments,
 		maxSegmentAge: segmentTTL,
 		shards:        shards,
 		cleanupTicker: time.NewTicker(time.Minute),
@@ -88,7 +115,11 @@ func (m *SegmentsManager) AddSegment(segment *MessageSegment) (uint64, uint32, s
 	if err != nil {
 		return 0, StatusSysErr, "", false, false, err
 	}
-	if segment.SegmentsCount > defaultSegmentsCount || segment.SegmentsCount <= 1 || segment.SegmentSeqNum > defaultSegmentsCount {
+	if segment.SegmentsCount <= 1 ||
+		segment.SegmentSeqNum == 0 ||
+		segment.SegmentSeqNum > segment.SegmentsCount ||
+		segment.SegmentsCount > uint8(m.maxSegments) ||
+		segment.SegmentSeqNum > uint8(m.maxSegments) {
 		return messageID, StatusInvMsgLen, "", false, false, fmt.Errorf("invalid segment count")
 	}
 
@@ -101,18 +132,29 @@ func (m *SegmentsManager) AddSegment(segment *MessageSegment) (uint64, uint32, s
 				CreatedAt:         time.Now(),
 				FirstPDUCreatedAt: segment.RegisteredAt,
 			},
+			list:     make([]*MessageSegment, segment.SegmentsCount),
 			expected: segment.SegmentsCount,
 		}
 		shard.segments[segment.SegmentGroupID] = group
+	} else if segment.SegmentsCount != group.expected {
+		shard.mu.Unlock()
+		return messageID, StatusInvMsgLen, "", false, false, fmt.Errorf("segment count mismatch")
 	}
+
 	group.deliveryReceiptRequested = group.deliveryReceiptRequested || segment.DeliveryReceiptRequested
 
-	idx := segment.SegmentSeqNum - 1
+	idx := int(segment.SegmentSeqNum - 1)
+	if idx < 0 || idx >= len(group.list) {
+		shard.mu.Unlock()
+		return messageID, StatusInvMsgLen, "", false, false, fmt.Errorf("invalid segment index")
+	}
+
+	oldCount := group.count
 	if group.list[idx] == nil {
 		group.count++
 	}
 
-	if group.count == 1 && group.bitmap == 0 {
+	if oldCount == 0 {
 		segment.MessageID = messageID
 	} else {
 		for _, seg := range group.list {
@@ -125,14 +167,13 @@ func (m *SegmentsManager) AddSegment(segment *MessageSegment) (uint64, uint32, s
 	}
 
 	group.list[idx] = segment
-	group.bitmap |= 1 << idx
 
 	groupCopy := &segmentGroup{
 		meta:                     group.meta,
-		bitmap:                   group.bitmap,
 		count:                    group.count,
 		expected:                 group.expected,
 		deliveryReceiptRequested: group.deliveryReceiptRequested,
+		list:                     make([]*MessageSegment, len(group.list)),
 	}
 	for i, seg := range group.list {
 		if seg != nil {
@@ -176,13 +217,7 @@ func (m *SegmentsManager) GetCompleteMessage(group *segmentGroup) ([]byte, uint8
 
 	full := make([]byte, 0, fullLen)
 	for seq := uint8(1); seq <= group.expected; seq++ {
-		var seg *MessageSegment
-		for i := uint8(0); i < defaultSegmentsCount; i++ {
-			if group.list[i] != nil && group.list[i].SegmentSeqNum == seq {
-				seg = group.list[i]
-				break
-			}
-		}
+		seg := group.list[seq-1]
 		if seg == nil {
 			return nil, 0, false
 		}

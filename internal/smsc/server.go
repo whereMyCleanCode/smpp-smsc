@@ -17,6 +17,9 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// TODO: move in cfg and setter
+const pendingRequestsCleanupInterval = time.Hour
+
 type Server struct {
 	mu sync.Mutex
 
@@ -26,12 +29,15 @@ type Server struct {
 
 	listener net.Listener
 
-	sessionsManager *SessionsManager
+	sessionsManager *SessController
 
 	ctx          context.Context
 	cancel       context.CancelFunc
 	shutdownWait sync.WaitGroup
 	handler      SMPPHandler
+
+	// globalRateLimiter is an optional shared rate limiter applied across all sessions.
+	globalRateLimiter *rate.Limiter
 }
 
 func NewServer(cfg *Config, lgr Logger, idGenerator IDGenerator) (*Server, error) {
@@ -75,6 +81,12 @@ func (s *Server) SetHandler(handler SMPPHandler) {
 	s.handler = handler
 }
 
+// SetGlobalRateLimiter sets a custom global rate limiter for all sessions.
+// If nil, per-session rate limiters are used based on config.
+func (s *Server) SetGlobalRateLimiter(limiter *rate.Limiter) {
+	s.globalRateLimiter = limiter
+}
+
 func (s *Server) Start() chan error {
 	errCh := make(chan error, 1)
 
@@ -95,6 +107,15 @@ func (s *Server) Start() chan error {
 			Int("max_rps_limit", s.cfg.DefaultMaxRPSLimit).
 			Int("burst_rps_limit", s.cfg.DefaultBurstRPSLimit).
 			Msg("runtime limits")
+
+		s.lgr.Info().
+			Bool("global_rate_limiter_enabled", s.cfg.GlobalRateLimiterEnabled).
+			Bool("per_session_rate_limiter_enabled", s.cfg.PerSessionRateLimiterEnabled).
+			Int("global_max_rps", s.cfg.GlobalMaxRPSLimit).
+			Int("global_burst_rps", s.cfg.GlobalBurstRPSLimit).
+			Int("default_max_rps", s.cfg.DefaultMaxRPSLimit).
+			Int("default_burst_rps", s.cfg.DefaultBurstRPSLimit).
+			Msg("rate limiter settings")
 
 		s.lgr.Info().
 			Bool("tcp_nodelay", s.cfg.TCPNoDelay).
@@ -197,26 +218,47 @@ func (s *Server) handleConnection(conn net.Conn) {
 	now := time.Now()
 	sessionID := s.generateSessionID()
 
+	// Create rate limiter based on configuration
+	var sessionRateLimiter *rate.Limiter
+	if s.globalRateLimiter != nil {
+		// Use global rate limiter if set via SetGlobalRateLimiter
+		sessionRateLimiter = s.globalRateLimiter
+	} else if s.cfg.GlobalRateLimiterEnabled && s.cfg.GlobalMaxRPSLimit > 0 {
+		// Use global rate limiter from config
+		sessionRateLimiter = rate.NewLimiter(
+			rate.Limit(maxInt(1, s.cfg.GlobalMaxRPSLimit)),
+			maxInt(1, s.cfg.GlobalBurstRPSLimit),
+		)
+	} else if s.cfg.PerSessionRateLimiterEnabled {
+		// Use per-session rate limiter
+		sessionRateLimiter = rate.NewLimiter(
+			rate.Limit(maxInt(1, s.cfg.DefaultMaxRPSLimit)),
+			maxInt(1, s.cfg.DefaultBurstRPSLimit),
+		)
+	}
+	// If all disabled, sessionRateLimiter remains nil (no rate limiting)
+
 	session := &Session{
-		ID:                sessionID,
-		PodID:             s.cfg.PodID,
-		Address:           conn.RemoteAddr().String(),
-		Conn:              conn,
-		Reader:            bufio.NewReaderSize(conn, s.cfg.DecoderBufferSize),
-		Writer:            bufio.NewWriterSize(conn, s.cfg.DecoderBufferSize),
-		Bound:             false,
-		BindingType:       BindingTypeNone,
-		handler:           s.handler,
-		cfg:               s.cfg,
-		logger:            s.lgr.With().Str("session_id", sessionID).Str("client_addr", conn.RemoteAddr().String()).Logger(),
-		pduQueue:          make(chan pdu.Body, maxInt(64, s.cfg.WindowSize)),
-		errCh:             make(chan error, 1),
-		stopCh:            make(chan struct{}),
-		ctx:               ctx,
-		cancel:            cancel,
-		lastActivityNanos: now.UnixNano(),
-		segmentsMgr:       NewSegmentsManager(s.lgr, s.cfg.SegsBucketTtl, s.idGenerator),
-		rateLimiter:       rate.NewLimiter(rate.Limit(maxInt(1, s.cfg.DefaultMaxRPSLimit)), maxInt(1, s.cfg.DefaultBurstRPSLimit)),
+		ID:                         sessionID,
+		PodID:                      s.cfg.PodID,
+		Address:                    conn.RemoteAddr().String(),
+		Conn:                       conn,
+		Reader:                     bufio.NewReaderSize(conn, s.cfg.DecoderBufferSize),
+		Writer:                     bufio.NewWriterSize(conn, s.cfg.DecoderBufferSize),
+		Bound:                      false,
+		BindingType:                BindingTypeNone,
+		handler:                    s.handler,
+		cfg:                        s.cfg,
+		logger:                     s.lgr.With().Str("session_id", sessionID).Str("client_addr", conn.RemoteAddr().String()).Logger(),
+		pduQueue:                   make(chan pdu.Body, maxInt(64, s.cfg.WindowSize)),
+		errCh:                      make(chan error, 1),
+		stopCh:                     make(chan struct{}),
+		ctx:                        ctx,
+		cancel:                     cancel,
+		lastActivityNanos:          now.UnixNano(),
+		segmentsMgr:                NewSegmentsManager(s.lgr, s.cfg.SegsBucketTtl, s.idGenerator, s.cfg.MaxSubmitSMSegments),
+		PendingRequestsCleanTicker: time.NewTicker(pendingRequestsCleanupInterval),
+		rateLimiter:                sessionRateLimiter,
 	}
 
 	session.registerMessageID = func(messageID uint64) {
@@ -280,6 +322,9 @@ type DeliverSMParams struct {
 	ScheduleTime       string
 	SMDefaultMsgID     uint8
 	TLVOptions         map[uint16][]byte
+	// UseMessagePayload indicates that message should be sent via message_payload TLV (0x0424)
+	// instead of short_message field. Useful for messages >255 bytes.
+	UseMessagePayload bool
 }
 
 func NewDeliverSMParams(sourceAddr, destAddr string, message []byte) *DeliverSMParams {
@@ -320,6 +365,13 @@ func (p *DeliverSMParams) AddTLV(tag uint16, value []byte) {
 		p.TLVOptions = map[uint16][]byte{}
 	}
 	p.TLVOptions[tag] = append([]byte(nil), value...)
+}
+
+// SetUseMessagePayload enables sending the message via message_payload TLV (0x0424)
+// instead of short_message field.
+func (p *DeliverSMParams) SetUseMessagePayload(enable bool) *DeliverSMParams {
+	p.UseMessagePayload = enable
+	return p
 }
 
 func (s *Server) SendDeliverSM(ctx context.Context, sessionID, sourceAddr, destAddr string, message []byte, dataCoding uint8, esmClass uint8) (uint32, error) {
@@ -430,7 +482,9 @@ func (s *Server) SendDeliveryReport(
 		return 0, err
 	}
 
+	// Remove pending request after successful send
 	session.RemovePendingRequestByMessageID(internalMessageID)
+
 	return DeliveryReportSent, nil
 }
 
@@ -453,7 +507,16 @@ func (s *Server) createDeliverSMPDUWithParams(params *DeliverSMParams) pdu.Body 
 	_ = fields.Set(pdufield.ReplaceIfPresentFlag, params.ReplaceIfPresent)
 	_ = fields.Set(pdufield.DataCoding, params.DataCoding)
 	_ = fields.Set(pdufield.SMDefaultMsgID, params.SMDefaultMsgID)
-	_ = fields.Set(pdufield.ShortMessage, params.Message)
+
+	// Determine whether to use message_payload TLV or short_message
+	// Per SMPP 3.4 spec, if message_payload is present, short_message is ignored
+	if params.UseMessagePayload || len(params.Message) > 254 {
+		// Use message_payload TLV (0x0424)
+		_ = body.TLVFields().Set(pdutlv.Tag(TagMessagePayload), append([]byte(nil), params.Message...))
+	} else {
+		// Use short_message field (default)
+		_ = fields.Set(pdufield.ShortMessage, params.Message)
+	}
 
 	for tag, value := range params.TLVOptions {
 		_ = body.TLVFields().Set(pdutlv.Tag(tag), value)
@@ -647,6 +710,11 @@ func (h *defaultSMPPHandler) HandleBindTransceiver(_ context.Context, params map
 	session.Password = params["password"]
 	session.BindingType = BindingTypeTransceiver
 	session.Bound = true
+	session.logger.Info().
+		Str("handler", "default_smpp").
+		Str("event", "bind_transceiver").
+		Str("system_id", session.SystemID).
+		Msg("mock handler")
 	return StatusOK, nil
 }
 
@@ -655,6 +723,11 @@ func (h *defaultSMPPHandler) HandleBindReceiver(_ context.Context, params map[st
 	session.Password = params["password"]
 	session.BindingType = BindingTypeReceiver
 	session.Bound = true
+	session.logger.Info().
+		Str("handler", "default_smpp").
+		Str("event", "bind_receiver").
+		Str("system_id", session.SystemID).
+		Msg("mock handler")
 	return StatusOK, nil
 }
 
@@ -663,28 +736,74 @@ func (h *defaultSMPPHandler) HandleBindTransmitter(_ context.Context, params map
 	session.Password = params["password"]
 	session.BindingType = BindingTypeTransmitter
 	session.Bound = true
+	session.logger.Info().
+		Str("handler", "default_smpp").
+		Str("event", "bind_transmitter").
+		Str("system_id", session.SystemID).
+		Msg("mock handler")
 	return StatusOK, nil
 }
 
 func (h *defaultSMPPHandler) HandleSubmitSM(_ context.Context, params *SubmitSmParams, session *Session) *SmppResponse {
 	if !session.BindingType.IsTransmitter() {
+		session.logger.Info().
+			Str("handler", "default_smpp").
+			Str("event", "submit_sm").
+			Str("reason", "invalid_binding").
+			Msg("mock handler")
 		return &SmppResponse{Status: StatusInvBnd}
 	}
 	if params.SourceAddr == "" || params.DestAddr == "" {
+		session.logger.Info().
+			Str("handler", "default_smpp").
+			Str("event", "submit_sm").
+			Str("reason", "missing_addresses").
+			Msg("mock handler")
 		return &SmppResponse{Status: StatusInvSrcAdr}
 	}
+	session.logger.Info().
+		Str("handler", "default_smpp").
+		Str("event", "submit_sm").
+		Str("source", params.SourceAddr).
+		Str("destination", params.DestAddr).
+		Msg("mock handler")
 	return &SmppResponse{Status: StatusOK}
 }
 
 func (h *defaultSMPPHandler) HandleUnbind(_ context.Context, session *Session) (uint32, error) {
 	session.Bound = false
+	session.logger.Info().
+		Str("handler", "default_smpp").
+		Str("event", "unbind").
+		Msg("mock handler")
 	return StatusOK, nil
 }
 
-func (h *defaultSMPPHandler) HandleEnquireLink(_ context.Context, _ *Session) (uint32, error) {
+func (h *defaultSMPPHandler) HandleEnquireLink(_ context.Context, session *Session) (uint32, error) {
+	session.logger.Debug().
+		Str("handler", "default_smpp").
+		Str("event", "enquire_link").
+		Msg("mock handler")
 	return StatusOK, nil
 }
 
-func (h *defaultSMPPHandler) HandleDeliverSMResp(_ context.Context, _ uint32, _ uint32, _ *Session) error {
+func (h *defaultSMPPHandler) HandleDeliverSMResp(_ context.Context, sequenceNumber uint32, status uint32, session *Session) error {
+	session.logger.Debug().
+		Str("handler", "default_smpp").
+		Str("event", "deliver_sm_resp").
+		Uint32("sequence", sequenceNumber).
+		Uint32("status", status).
+		Msg("mock handler")
+	if val, ok := session.PendingRequests.Load(sequenceNumber); ok {
+		if v, ok := val.(*PendingRequest); ok {
+			if v.RegisteredDelivery <= 0 {
+				return ErrInvalidPDU
+			}
+		}
+		if status != StatusOK {
+			session.logger.Info().Str("session_id", session.ID).Msg("session can't receive DLR")
+		}
+	}
+
 	return nil
 }

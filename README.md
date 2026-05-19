@@ -30,7 +30,9 @@ import (
 	"github.com/whereMyCleanCode/smpp-smsc/internal/smsc"
 )
 
-type demoHandler struct{}
+type demoHandler struct {
+	lgr smsc.Logger
+}
 
 func (h *demoHandler) HandleBindTransceiver(ctx context.Context, params map[string]string, s *smsc.Session) (uint32, error) {
 	s.SystemID = params["system_id"]
@@ -105,7 +107,7 @@ func main() {
 		panic(err)
 	}
 
-	server.SetHandler(&demoHandler{})
+	server.SetHandler(&demoHandler{lgr: logger.WithStr("handler", "demo")})
 	errCh := server.Start()
 
 	sigCh := make(chan os.Signal, 1)
@@ -211,6 +213,8 @@ When a client requested a receipt on `submit_sm`, the SMSC stores `PendingReques
 - `internalMessageID`: the internal `uint64` message id used as the key in `PendingRequests` (from `HandleSubmitSM` / segment completion).
 - `success`: final delivery outcome; `registered_delivery` policy (success-only / failure-only / both) decides whether a `deliver_sm` is sent; skipped outcomes return `DeliveryReportSkipped*` and still clear the pending entry.
 - **Addresses**: `source_addr` / `destination_addr` on the receipt are typically the MT destination (recipient) and original submit source respectively (swap relative to `submit_sm` direction).
+
+Pending Requests by DLR have ttl by 74h  inb default if you want use other val make issue. Cleanup star work every hour
 
 The receipt short message is formatted as `id:… sub:… dlvrd:… submit date:… done date:… stat:… err:… text:…`. For failures, `dlvrd` is `000` while `sub` reflects the submitted segment count; for success, `sub` and `dlvrd` match (at least one segment). Helpers `FormatDeliveryReceiptString` and `BuildDeliveryReceiptFromPending` live in the same package for tests or custom send paths.
 

@@ -30,7 +30,7 @@ func TestSessionManagerMessageIDRouting(t *testing.T) {
 		cancel:        func() {},
 		stopCh:        make(chan struct{}),
 		pduQueue:      make(chan pdu.Body, 4),
-		segmentsMgr:   NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}),
+		segmentsMgr:   NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}, 10),
 		logger:        newTestLogger(),
 		cfg:           cfg,
 	}
@@ -55,7 +55,7 @@ func TestSessionManagerMessageIDRouting(t *testing.T) {
 func TestSessionManagerDeletesInactiveSessionAfterRetries(t *testing.T) {
 	cfg := newTestConfig()
 	cfg.InactivityTimeout = 10 * time.Millisecond
-	cfg.MaxEnquireLinkRetryCount = 0
+	cfg.MaxEnquireLinkRetry = 0
 
 	ctx, cancel := newTestContext()
 	defer cancel()
@@ -79,7 +79,7 @@ func TestSessionManagerDeletesInactiveSessionAfterRetries(t *testing.T) {
 		cancel:            sessionCancel,
 		stopCh:            make(chan struct{}),
 		pduQueue:          make(chan pdu.Body, 4),
-		segmentsMgr:       NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}),
+		segmentsMgr:       NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}, 10),
 		logger:            newTestLogger(),
 		lastActivityNanos: time.Now().Add(-time.Second).UnixNano(),
 	}
