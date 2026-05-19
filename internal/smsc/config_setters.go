@@ -154,6 +154,11 @@ func (c *Config) SetTCPLinger(linger int) *Config {
 	return c
 }
 
+func (c *Config) SetPendingRequestsCleanupInterval(interval time.Duration) *Config {
+	c.PendingRequestsCleanupInterval = interval
+	return c
+}
+
 func (c *Config) SetSessionCacheCapacity(capacity int) *Config {
 	c.SessionCache.Cap = capacity
 	return c

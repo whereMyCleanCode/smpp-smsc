@@ -26,7 +26,8 @@ type Config struct {
 	SegsBucketTtl       time.Duration
 	MaxEnquireLinkRetry int
 
-	PendingRequestTtl time.Duration `default:"74h"`
+	PendingRequestTtl              time.Duration `default:"74h"`
+	PendingRequestsCleanupInterval time.Duration `default:"1h"`
 
 	WindowSize        int
 	DecoderBufferSize int
@@ -66,36 +67,38 @@ type Config struct {
 
 func DefaultConfig() *Config {
 	return &Config{
-		Address:                      ":2775",
-		PodID:                        "smsc-1",
-		SystemID:                     "SMSC",
-		LogLevel:                     "info",
-		PrettyLogs:                   true,
-		ColorLogs:                    true,
-		StartupVerbose:               true,
-		Timeout:                      90 * time.Second,
-		InactivityTimeout:            30 * time.Second,
-		SegsBucketTtl:                3 * time.Minute,
-		MaxEnquireLinkRetry:          3,
-		WindowSize:                   2000,
-		DecoderBufferSize:            128 * 1024,
-		MaxWriteWorkers:              1,
-		MaxReadWorkers:               1,
-		GlobalRateLimiterEnabled:     false,
-		GlobalMaxRPSLimit:            0,
-		GlobalBurstRPSLimit:          0,
-		PerSessionRateLimiterEnabled: true,
-		DefaultMaxRPSLimit:           1500,
-		DefaultBurstRPSLimit:         1800,
-		DefaultMaxSegsCount:          200,
-		MaxSubmitSMSegments:          10,
-		MaxMessagePayloadLen:         4096,
-		TCPNoDelay:                   true,
-		TCPKeepAlive:                 true,
-		TCPKeepAlivePeriod:           60 * time.Second,
-		TCPReadBufferSize:            256 * 1024,
-		TCPWriteBufferSize:           256 * 1024,
-		TCPLinger:                    5,
+		Address:                        ":2775",
+		PodID:                          "smsc-1",
+		SystemID:                       "SMSC",
+		LogLevel:                       "info",
+		PrettyLogs:                     true,
+		ColorLogs:                      true,
+		StartupVerbose:                 true,
+		Timeout:                        90 * time.Second,
+		InactivityTimeout:              30 * time.Second,
+		SegsBucketTtl:                  3 * time.Minute,
+		MaxEnquireLinkRetry:            3,
+		PendingRequestTtl:              74 * time.Hour,
+		PendingRequestsCleanupInterval: time.Hour,
+		WindowSize:                     2000,
+		DecoderBufferSize:              128 * 1024,
+		MaxWriteWorkers:                1,
+		MaxReadWorkers:                 1,
+		GlobalRateLimiterEnabled:       false,
+		GlobalMaxRPSLimit:              0,
+		GlobalBurstRPSLimit:            0,
+		PerSessionRateLimiterEnabled:   true,
+		DefaultMaxRPSLimit:             1500,
+		DefaultBurstRPSLimit:           1800,
+		DefaultMaxSegsCount:            200,
+		MaxSubmitSMSegments:            10,
+		MaxMessagePayloadLen:           4096,
+		TCPNoDelay:                     true,
+		TCPKeepAlive:                   true,
+		TCPKeepAlivePeriod:             60 * time.Second,
+		TCPReadBufferSize:              256 * 1024,
+		TCPWriteBufferSize:             256 * 1024,
+		TCPLinger:                      5,
 		SessionCache: SessionCacheConfig{
 			Cap:             10000,
 			InactiveTimeout: 30 * time.Second,

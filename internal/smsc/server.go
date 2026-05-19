@@ -17,9 +17,6 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// TODO: move in cfg and setter
-const pendingRequestsCleanupInterval = time.Hour
-
 type Server struct {
 	mu sync.Mutex
 
@@ -257,7 +254,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		cancel:                     cancel,
 		lastActivityNanos:          now.UnixNano(),
 		segmentsMgr:                NewSegmentsManager(s.lgr, s.cfg.SegsBucketTtl, s.idGenerator, s.cfg.MaxSubmitSMSegments),
-		PendingRequestsCleanTicker: time.NewTicker(pendingRequestsCleanupInterval),
+		PendingRequestsCleanTicker: time.NewTicker(s.cfg.PendingRequestsCleanupInterval),
 		rateLimiter:                sessionRateLimiter,
 	}
 
