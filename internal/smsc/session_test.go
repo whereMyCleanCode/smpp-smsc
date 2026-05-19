@@ -72,8 +72,10 @@ func TestParseSubmitSMWithPayloadAndSAR(t *testing.T) {
 	if !params.WithPayload {
 		t.Fatalf("expected payload flag")
 	}
-	if string(params.ShortMessage) != "segment-payload" {
-		t.Fatalf("unexpected payload: %q", string(params.ShortMessage))
+	// Per SMPP 3.4 spec, message_payload takes priority over short_message
+	payload := params.GetMessage()
+	if string(payload) != "segment-payload" {
+		t.Fatalf("unexpected payload: %q", string(payload))
 	}
 	if params.Segment == nil {
 		t.Fatalf("expected segment from SAR TLVs")

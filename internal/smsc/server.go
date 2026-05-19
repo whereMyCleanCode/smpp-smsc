@@ -322,6 +322,9 @@ type DeliverSMParams struct {
 	ScheduleTime       string
 	SMDefaultMsgID     uint8
 	TLVOptions         map[uint16][]byte
+	// UseMessagePayload indicates that message should be sent via message_payload TLV (0x0424)
+	// instead of short_message field. Useful for messages >255 bytes.
+	UseMessagePayload bool
 }
 
 func NewDeliverSMParams(sourceAddr, destAddr string, message []byte) *DeliverSMParams {
@@ -362,6 +365,13 @@ func (p *DeliverSMParams) AddTLV(tag uint16, value []byte) {
 		p.TLVOptions = map[uint16][]byte{}
 	}
 	p.TLVOptions[tag] = append([]byte(nil), value...)
+}
+
+// SetUseMessagePayload enables sending the message via message_payload TLV (0x0424)
+// instead of short_message field.
+func (p *DeliverSMParams) SetUseMessagePayload(enable bool) *DeliverSMParams {
+	p.UseMessagePayload = enable
+	return p
 }
 
 func (s *Server) SendDeliverSM(ctx context.Context, sessionID, sourceAddr, destAddr string, message []byte, dataCoding uint8, esmClass uint8) (uint32, error) {
@@ -472,6 +482,9 @@ func (s *Server) SendDeliveryReport(
 		return 0, err
 	}
 
+	// Remove pending request after successful send
+	session.RemovePendingRequestByMessageID(internalMessageID)
+
 	return DeliveryReportSent, nil
 }
 
@@ -494,7 +507,16 @@ func (s *Server) createDeliverSMPDUWithParams(params *DeliverSMParams) pdu.Body 
 	_ = fields.Set(pdufield.ReplaceIfPresentFlag, params.ReplaceIfPresent)
 	_ = fields.Set(pdufield.DataCoding, params.DataCoding)
 	_ = fields.Set(pdufield.SMDefaultMsgID, params.SMDefaultMsgID)
-	_ = fields.Set(pdufield.ShortMessage, params.Message)
+
+	// Determine whether to use message_payload TLV or short_message
+	// Per SMPP 3.4 spec, if message_payload is present, short_message is ignored
+	if params.UseMessagePayload || len(params.Message) > 254 {
+		// Use message_payload TLV (0x0424)
+		_ = body.TLVFields().Set(pdutlv.Tag(TagMessagePayload), append([]byte(nil), params.Message...))
+	} else {
+		// Use short_message field (default)
+		_ = fields.Set(pdufield.ShortMessage, params.Message)
+	}
 
 	for tag, value := range params.TLVOptions {
 		_ = body.TLVFields().Set(pdutlv.Tag(tag), value)
