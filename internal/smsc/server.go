@@ -767,6 +767,20 @@ func (h *defaultSMPPHandler) HandleSubmitSM(_ context.Context, params *SubmitSmP
 	return &SmppResponse{Status: StatusOK}
 }
 
+func (h *defaultSMPPHandler) HandleQuerySM(_ context.Context, params *QuerySmParams, session *Session) (*QuerySmResponse, uint32, error) {
+	session.logger.Info().
+		Str("handler", "default_smpp").
+		Str("event", "query_sm").
+		Str("message_id", params.MessageID).
+		Msg("mock handler")
+	return &QuerySmResponse{
+		MessageID:    params.MessageID,
+		FinalDate:    "",
+		MessageState: 2, // DELIVERED
+		ErrorCode:    0,
+	}, StatusOK, nil
+}
+
 func (h *defaultSMPPHandler) HandleUnbind(_ context.Context, session *Session) (uint32, error) {
 	session.Bound = false
 	session.logger.Info().

@@ -19,33 +19,35 @@ const (
 	SubmitSMResp        uint32 = uint32(pdu.SubmitSMRespID)
 	DeliverSM           uint32 = uint32(pdu.DeliverSMID)
 	DeliverSMResp       uint32 = uint32(pdu.DeliverSMRespID)
+	QuerySM             uint32 = uint32(pdu.QuerySMID)
+	QuerySMResp         uint32 = uint32(pdu.QuerySMRespID)
 	EnquireLink         uint32 = uint32(pdu.EnquireLinkID)
 	EnquireLinkResp     uint32 = uint32(pdu.EnquireLinkRespID)
 	GenericNACK         uint32 = uint32(pdu.GenericNACKID)
 )
 
 const (
-	StatusOK              uint32 = 0x00000000
-	StatusInvMsgLen       uint32 = 0x00000001
-	StatusInvCmdLen       uint32 = 0x00000002
-	StatusInvCmdID        uint32 = 0x00000003
-	StatusInvBnd          uint32 = 0x00000004
-	StatusAlyBnd          uint32 = 0x00000005
-	StatusInvRegDlvFlg    uint32 = 0x00000007
-	StatusSysErr          uint32 = 0x00000008
-	StatusInvSrcAdr       uint32 = 0x0000000A
-	StatusInvDstAdr       uint32 = 0x0000000B
-	StatusInvDestFlag     uint32 = 0x00000040
-	StatusInvMsgID        uint32 = 0x0000000C
-	StatusBindFail        uint32 = 0x0000000D
-	StatusInvPaswd        uint32 = 0x0000000E
-	StatusInvSysID        uint32 = 0x0000000F
-	StatusSubmitFail      uint32 = 0x00000045
-	StatusInvDataCoding   uint32 = 0x00000010
-	StatusThrottled       uint32 = 0x00000058
-	StatusInvOptParamVal  uint32 = 0x000000C4
-	StatusDeliveryFailure uint32 = 0x000000FE
-	StatusUnknownErr      uint32 = 0x000000FF
+	StatusOK             uint32 = 0x00000000
+	StatusInvMsgLen      uint32 = 0x00000001
+	StatusInvCmdLen      uint32 = 0x00000002
+	StatusInvCmdID       uint32 = 0x00000003
+	StatusInvBnd         uint32 = 0x00000004
+	StatusAlyBnd         uint32 = 0x00000005
+	StatusInvRegDlvFlg   uint32 = 0x00000007
+	StatusSysErr         uint32 = 0x00000008
+	StatusInvSrcAdr      uint32 = 0x0000000A
+	StatusInvDstAdr      uint32 = 0x0000000B
+	StatusInvDestFlag    uint32 = 0x00000040
+	StatusInvMsgID       uint32 = 0x0000000C
+	StatusBindFail       uint32 = 0x0000000D
+	StatusInvPaswd       uint32 = 0x0000000E
+	StatusInvSysID       uint32 = 0x0000000F
+	StatusSubmitFail     uint32 = 0x00000045
+	StatusInvDataCoding  uint32 = 0x00000010
+	StatusThrottled      uint32 = 0x00000058
+	StatusInvOptParamVal uint32 = 0x000000C4
+	StatusCancelSmFailed uint32 = 0x00000011
+	StatusQuerySmFailed  uint32 = 0x00000067
 )
 
 const (

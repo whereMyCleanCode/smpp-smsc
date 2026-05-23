@@ -402,6 +402,8 @@ func (s *Session) processPDU(pkt pdu.Body) {
 		s.handleUnbindPDU(pkt)
 	case pdu.SubmitSMID:
 		s.handleSubmitSMPDU(pkt)
+	case pdu.QuerySMID:
+		s.handleQuerySMPDU(pkt)
 	case pdu.EnquireLinkID:
 		s.handleEnquireLink(pkt)
 	default:
@@ -852,6 +854,68 @@ func (s *Session) sendSubmitSMResponse(sequenceNumber uint32, status *SmppRespon
 	resp.Header().Status = pdu.Status(status.Status)
 	_ = resp.Fields().Set(pdufield.MessageID, messageID)
 	_ = s.enqueuePDU(resp)
+}
+
+func (s *Session) handleQuerySMPDU(pkt pdu.Body) {
+	params, err := parseQuerySM(pkt)
+	if err != nil {
+		s.sendQuerySMResponse(pkt.Header().Seq, nil, StatusInvMsgLen)
+		return
+	}
+
+	queryResp, status, handlerErr := s.handler.HandleQuerySM(s.ctx, params, s)
+	if handlerErr != nil {
+		if status == 0 {
+			status = StatusQuerySmFailed
+		}
+		s.sendQuerySMResponse(pkt.Header().Seq, nil, status)
+		return
+	}
+
+	s.sendQuerySMResponse(pkt.Header().Seq, queryResp, StatusOK)
+}
+
+func parseQuerySM(pkt pdu.Body) (*QuerySmParams, error) {
+	fields := pkt.Fields()
+	params := &QuerySmParams{
+		SeqNum: pkt.Header().Seq,
+	}
+
+	if f := fields[pdufield.MessageID]; f != nil {
+		params.MessageID = f.String()
+	}
+	if f := fields[pdufield.SourceAddr]; f != nil {
+		params.SourceAddr = f.String()
+	}
+
+	if params.MessageID == "" {
+		return nil, fmt.Errorf("message_id is empty")
+	}
+
+	if v, ok := fields[pdufield.SourceAddrTON].(*pdufield.Fixed); ok {
+		params.SourceAddrTON = v.Data
+	}
+	if v, ok := fields[pdufield.SourceAddrNPI].(*pdufield.Fixed); ok {
+		params.SourceAddrNPI = v.Data
+	}
+
+	return params, nil
+}
+
+func (s *Session) sendQuerySMResponse(sequenceNumber uint32, resp *QuerySmResponse, status uint32) {
+	msg := pdu.NewQuerySMResp()
+	msg.Header().Seq = sequenceNumber
+	msg.Header().Status = pdu.Status(status)
+
+	if resp != nil && status == StatusOK {
+		_ = msg.Fields().Set(pdufield.MessageID, resp.MessageID)
+		_ = msg.Fields().Set(pdufield.FinalDate, resp.FinalDate)
+		if err := msg.Fields().Set(pdufield.MessageState, resp.MessageState); err == nil {
+			_ = msg.Fields().Set(pdufield.ErrorCode, resp.ErrorCode)
+		}
+	}
+
+	_ = s.enqueuePDU(msg)
 }
 
 func (s *Session) RemovePendingRequestByMessageID(messageID uint64) {

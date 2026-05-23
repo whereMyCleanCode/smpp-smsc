@@ -87,6 +87,21 @@ func (h *demoHandler) HandleSubmitSM(_ context.Context, params *smsc.SubmitSmPar
 	return &smsc.SmppResponse{Status: smsc.StatusOK}
 }
 
+func (h *demoHandler) HandleQuerySM(_ context.Context, params *smsc.QuerySmParams, session *smsc.Session) (*smsc.QuerySmResponse, uint32, error) {
+	h.lgr.Info().
+		Str("handler", "demo").
+		Str("event", "query_sm").
+		Str("session_id", session.ID).
+		Str("message_id", params.MessageID).
+		Msg("mock handler")
+	return &smsc.QuerySmResponse{
+		MessageID:    params.MessageID,
+		FinalDate:    "",
+		MessageState: 2,
+		ErrorCode:    0,
+	}, smsc.StatusOK, nil
+}
+
 func (h *demoHandler) HandleUnbind(_ context.Context, session *smsc.Session) (uint32, error) {
 	session.Bound = false
 	h.lgr.Info().
