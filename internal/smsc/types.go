@@ -237,3 +237,34 @@ type SmppResponse struct {
 	Msg    string
 	Status uint32
 }
+
+type QuerySmParams struct {
+	MessageID     string
+	SourceAddr    string
+	SourceAddrTON uint8
+	SourceAddrNPI uint8
+	SeqNum        uint32
+}
+
+type QuerySmResponse struct {
+	MessageID    string
+	FinalDate    string
+	MessageState uint8
+	ErrorCode    uint8
+}
+
+type ReplaceSmParams struct {
+	MessageID            string
+	SourceAddrTON        uint8
+	SourceAddrNPI        uint8
+	SourceAddr           string
+	DestAddrTON          uint8
+	DestAddrNPI          uint8
+	DestAddr             string
+	ScheduleDeliveryTime string
+	ValidityPeriod       string
+	RegisteredDelivery   uint8
+	SMDefaultMsgID       uint8
+	ShortMessage         []byte
+	SeqNum               uint32
+}

@@ -7,6 +7,8 @@ type SMPPHandler interface {
 	HandleBindReceiver(ctx context.Context, params map[string]string, session *Session) (uint32, error)
 	HandleBindTransmitter(ctx context.Context, params map[string]string, session *Session) (uint32, error)
 	HandleSubmitSM(ctx context.Context, params *SubmitSmParams, session *Session) *SmppResponse
+	HandleQuerySM(ctx context.Context, params *QuerySmParams, session *Session) (*QuerySmResponse, uint32, error)
+	HandleReplaceSM(ctx context.Context, params *ReplaceSmParams, session *Session) (uint32, error)
 	HandleUnbind(ctx context.Context, session *Session) (uint32, error)
 	HandleEnquireLink(ctx context.Context, session *Session) (uint32, error)
 	HandleDeliverSMResp(ctx context.Context, sequenceNumber uint32, status uint32, session *Session) error

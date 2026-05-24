@@ -46,6 +46,29 @@ func (h *containerTestHandler) HandleSubmitSM(_ context.Context, params *SubmitS
 	return &SmppResponse{Status: StatusOK}
 }
 
+func (h *containerTestHandler) HandleQuerySM(_ context.Context, params *QuerySmParams, session *Session) (*QuerySmResponse, uint32, error) {
+	session.logger.Info().
+		Str("handler", "container_test").
+		Str("event", "query_sm").
+		Str("message_id", params.MessageID).
+		Msg("mock handler")
+	return &QuerySmResponse{
+		MessageID:    params.MessageID,
+		FinalDate:    "",
+		MessageState: 2,
+		ErrorCode:    0,
+	}, StatusOK, nil
+}
+
+func (h *containerTestHandler) HandleReplaceSM(_ context.Context, params *ReplaceSmParams, session *Session) (uint32, error) {
+	session.logger.Info().
+		Str("handler", "container_test").
+		Str("event", "replace_sm").
+		Str("message_id", params.MessageID).
+		Msg("mock handler")
+	return StatusOK, nil
+}
+
 func (h *containerTestHandler) HandleUnbind(_ context.Context, session *Session) (uint32, error) {
 	session.logger.Info().
 		Str("handler", "container_test").

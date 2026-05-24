@@ -7,21 +7,27 @@ import (
 )
 
 const (
-	BindTransmitter     uint32 = uint32(pdu.BindTransmitterID)
-	BindTransmitterResp uint32 = uint32(pdu.BindTransmitterRespID)
-	BindReceiver        uint32 = uint32(pdu.BindReceiverID)
-	BindReceiverResp    uint32 = uint32(pdu.BindReceiverRespID)
-	BindTransceiver     uint32 = uint32(pdu.BindTransceiverID)
-	BindTransceiverResp uint32 = uint32(pdu.BindTransceiverRespID)
-	Unbind              uint32 = uint32(pdu.UnbindID)
-	UnbindResp          uint32 = uint32(pdu.UnbindRespID)
-	SubmitSM            uint32 = uint32(pdu.SubmitSMID)
-	SubmitSMResp        uint32 = uint32(pdu.SubmitSMRespID)
-	DeliverSM           uint32 = uint32(pdu.DeliverSMID)
-	DeliverSMResp       uint32 = uint32(pdu.DeliverSMRespID)
-	EnquireLink         uint32 = uint32(pdu.EnquireLinkID)
-	EnquireLinkResp     uint32 = uint32(pdu.EnquireLinkRespID)
-	GenericNACK         uint32 = uint32(pdu.GenericNACKID)
+	BindTransmitter     uint32 = 0x00000002
+	BindTransmitterResp uint32 = 0x80000002
+	BindReceiver        uint32 = 0x00000001
+	BindReceiverResp    uint32 = 0x80000001
+	BindTransceiver     uint32 = 0x00000009
+	BindTransceiverResp uint32 = 0x80000009
+	Unbind              uint32 = 0x00000006
+	UnbindResp          uint32 = 0x80000006
+	SubmitSM            uint32 = 0x00000004
+	SubmitSMResp        uint32 = 0x80000004
+	DeliverSM           uint32 = 0x00000005
+	DeliverSMResp       uint32 = 0x80000005
+	QuerySM             uint32 = 0x00000003
+	QuerySMResp         uint32 = 0x80000003
+	ReplaceSM           uint32 = 0x00000007
+	ReplaceSMResp       uint32 = 0x80000007
+	CancelSM            uint32 = 0x00000008
+	CancelSMResp        uint32 = 0x80000008
+	EnquireLink         uint32 = 0x00000015
+	EnquireLinkResp     uint32 = 0x80000015
+	GenericNACK         uint32 = 0x80000000
 )
 
 const (
@@ -44,8 +50,9 @@ const (
 	StatusInvDataCoding   uint32 = 0x00000010
 	StatusThrottled       uint32 = 0x00000058
 	StatusInvOptParamVal  uint32 = 0x000000C4
-	StatusDeliveryFailure uint32 = 0x000000FE
-	StatusUnknownErr      uint32 = 0x000000FF
+	StatusCancelSmFailed  uint32 = 0x00000011
+	StatusReplaceSmFailed uint32 = 0x00000013
+	StatusQuerySmFailed   uint32 = 0x00000067
 )
 
 const (

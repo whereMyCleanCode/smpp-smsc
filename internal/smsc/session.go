@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -402,6 +403,10 @@ func (s *Session) processPDU(pkt pdu.Body) {
 		s.handleUnbindPDU(pkt)
 	case pdu.SubmitSMID:
 		s.handleSubmitSMPDU(pkt)
+	case pdu.QuerySMID:
+		s.handleQuerySMPDU(pkt)
+	case pdu.ReplaceSMID:
+		s.handleReplaceSMPDU(pkt)
 	case pdu.EnquireLinkID:
 		s.handleEnquireLink(pkt)
 	default:
@@ -852,6 +857,154 @@ func (s *Session) sendSubmitSMResponse(sequenceNumber uint32, status *SmppRespon
 	resp.Header().Status = pdu.Status(status.Status)
 	_ = resp.Fields().Set(pdufield.MessageID, messageID)
 	_ = s.enqueuePDU(resp)
+}
+
+func (s *Session) handleQuerySMPDU(pkt pdu.Body) {
+	params, err := parseQuerySM(pkt)
+	if err != nil {
+		s.sendQuerySMResponse(pkt.Header().Seq, nil, StatusInvMsgLen)
+		return
+	}
+
+	queryResp, status, handlerErr := s.handler.HandleQuerySM(s.ctx, params, s)
+	if handlerErr != nil {
+		if status == 0 {
+			status = StatusQuerySmFailed
+		}
+		s.sendQuerySMResponse(pkt.Header().Seq, nil, status)
+		return
+	}
+
+	s.sendQuerySMResponse(pkt.Header().Seq, queryResp, StatusOK)
+}
+
+func parseQuerySM(pkt pdu.Body) (*QuerySmParams, error) {
+	fields := pkt.Fields()
+	params := &QuerySmParams{
+		SeqNum: pkt.Header().Seq,
+	}
+
+	if f := fields[pdufield.MessageID]; f != nil {
+		params.MessageID = f.String()
+	}
+	if f := fields[pdufield.SourceAddr]; f != nil {
+		params.SourceAddr = f.String()
+	}
+
+	if params.MessageID == "" {
+		return nil, fmt.Errorf("message_id is empty")
+	}
+
+	if v, ok := fields[pdufield.SourceAddrTON].(*pdufield.Fixed); ok {
+		params.SourceAddrTON = v.Data
+	}
+	if v, ok := fields[pdufield.SourceAddrNPI].(*pdufield.Fixed); ok {
+		params.SourceAddrNPI = v.Data
+	}
+
+	return params, nil
+}
+
+func (s *Session) sendQuerySMResponse(sequenceNumber uint32, resp *QuerySmResponse, status uint32) {
+	msg := pdu.NewQuerySMResp()
+	msg.Header().Seq = sequenceNumber
+	msg.Header().Status = pdu.Status(status)
+
+	if resp != nil && status == StatusOK {
+		_ = msg.Fields().Set(pdufield.MessageID, resp.MessageID)
+		_ = msg.Fields().Set(pdufield.FinalDate, resp.FinalDate)
+		if err := msg.Fields().Set(pdufield.MessageState, resp.MessageState); err == nil {
+			_ = msg.Fields().Set(pdufield.ErrorCode, resp.ErrorCode)
+		}
+	}
+
+	_ = s.enqueuePDU(msg)
+}
+
+func (s *Session) handleReplaceSMPDU(pkt pdu.Body) {
+	params, err := parseReplaceSM(pkt)
+	if err != nil {
+		s.sendReplaceSMResponse(pkt.Header().Seq, StatusInvMsgLen)
+		return
+	}
+
+	status, handlerErr := s.handler.HandleReplaceSM(s.ctx, params, s)
+	if handlerErr != nil {
+		if status == 0 {
+			status = StatusReplaceSmFailed
+		}
+		s.sendReplaceSMResponse(pkt.Header().Seq, status)
+		return
+	}
+
+	s.sendReplaceSMResponse(pkt.Header().Seq, status)
+}
+
+func parseReplaceSM(pkt pdu.Body) (*ReplaceSmParams, error) {
+	fields := pkt.Fields()
+	params := &ReplaceSmParams{
+		SeqNum: pkt.Header().Seq,
+	}
+
+	if f := fields[pdufield.MessageID]; f != nil {
+		params.MessageID = f.String()
+	}
+	if f := fields[pdufield.SourceAddr]; f != nil {
+		params.SourceAddr = f.String()
+	}
+	if f := fields[pdufield.DestinationAddr]; f != nil {
+		params.DestAddr = f.String()
+	}
+	if f := fields[pdufield.ScheduleDeliveryTime]; f != nil {
+		params.ScheduleDeliveryTime = f.String()
+	}
+	if f := fields[pdufield.ValidityPeriod]; f != nil {
+		params.ValidityPeriod = f.String()
+	}
+
+	if params.MessageID == "" {
+		return nil, fmt.Errorf("message_id is empty")
+	}
+
+	if v, ok := fields[pdufield.SourceAddrTON].(*pdufield.Fixed); ok {
+		params.SourceAddrTON = v.Data
+	}
+	if v, ok := fields[pdufield.SourceAddrNPI].(*pdufield.Fixed); ok {
+		params.SourceAddrNPI = v.Data
+	}
+	if v, ok := fields[pdufield.DestAddrTON].(*pdufield.Fixed); ok {
+		params.DestAddrTON = v.Data
+	}
+	if v, ok := fields[pdufield.DestAddrNPI].(*pdufield.Fixed); ok {
+		params.DestAddrNPI = v.Data
+	}
+	if v, ok := fields[pdufield.RegisteredDelivery].(*pdufield.Fixed); ok {
+		params.RegisteredDelivery = v.Data
+	}
+	if v, ok := fields[pdufield.SMDefaultMsgID].(*pdufield.Fixed); ok {
+		params.SMDefaultMsgID = v.Data
+	}
+	if sm, ok := fields[pdufield.ShortMessage].(*pdufield.SM); ok {
+		params.ShortMessage = append([]byte(nil), sm.Data...)
+	}
+
+	return params, nil
+}
+
+func (s *Session) sendReplaceSMResponse(sequenceNumber uint32, status uint32) {
+	// ReplaceSMResp PDU structure:
+	// - header (16 bytes): command_id (4) + command_length (4) + sequence_number (4) + status (4)
+	// - body: empty
+	// - TLVs: none
+	commandID := ReplaceSMResp
+	commandLength := uint32(16) // header only, no body
+	var buf [16]byte
+	binary.BigEndian.PutUint32(buf[0:], commandID)
+	binary.BigEndian.PutUint32(buf[4:], commandLength)
+	binary.BigEndian.PutUint32(buf[8:], status)
+	binary.BigEndian.PutUint32(buf[12:], sequenceNumber)
+	_, _ = s.Conn.Write(buf[:])
+	_ = s.Writer.Flush()
 }
 
 func (s *Session) RemovePendingRequestByMessageID(messageID uint64) {
