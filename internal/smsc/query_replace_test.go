@@ -9,30 +9,32 @@ import (
 	"github.com/whereMyCleanCode/go-smpp/v2/smpp/pdu/pdufield"
 )
 
-type queryTestHandler struct {
-	queryCalled   bool
-	lastMessageID string
+type queryReplaceHandler struct {
+	queryCalled    bool
+	replaceCalled  bool
+	lastMessageID  string
+	lastSourceAddr string
 }
 
-func (h *queryTestHandler) HandleBindTransceiver(_ context.Context, _ map[string]string, s *Session) (uint32, error) {
+func (h *queryReplaceHandler) HandleBindTransceiver(_ context.Context, _ map[string]string, s *Session) (uint32, error) {
 	s.Bound = true
 	s.BindingType = BindingTypeTransceiver
 	return StatusOK, nil
 }
-func (h *queryTestHandler) HandleBindReceiver(_ context.Context, _ map[string]string, s *Session) (uint32, error) {
+func (h *queryReplaceHandler) HandleBindReceiver(_ context.Context, _ map[string]string, s *Session) (uint32, error) {
 	s.Bound = true
 	s.BindingType = BindingTypeReceiver
 	return StatusOK, nil
 }
-func (h *queryTestHandler) HandleBindTransmitter(_ context.Context, _ map[string]string, s *Session) (uint32, error) {
+func (h *queryReplaceHandler) HandleBindTransmitter(_ context.Context, _ map[string]string, s *Session) (uint32, error) {
 	s.Bound = true
 	s.BindingType = BindingTypeTransmitter
 	return StatusOK, nil
 }
-func (h *queryTestHandler) HandleSubmitSM(_ context.Context, _ *SubmitSmParams, _ *Session) *SmppResponse {
+func (h *queryReplaceHandler) HandleSubmitSM(_ context.Context, _ *SubmitSmParams, _ *Session) *SmppResponse {
 	return &SmppResponse{Status: StatusOK}
 }
-func (h *queryTestHandler) HandleQuerySM(_ context.Context, params *QuerySmParams, _ *Session) (*QuerySmResponse, uint32, error) {
+func (h *queryReplaceHandler) HandleQuerySM(_ context.Context, params *QuerySmParams, _ *Session) (*QuerySmResponse, uint32, error) {
 	h.queryCalled = true
 	h.lastMessageID = params.MessageID
 	return &QuerySmResponse{
@@ -42,12 +44,24 @@ func (h *queryTestHandler) HandleQuerySM(_ context.Context, params *QuerySmParam
 		ErrorCode:    0,
 	}, StatusOK, nil
 }
-func (h *queryTestHandler) HandleUnbind(_ context.Context, _ *Session) (uint32, error) { return StatusOK, nil }
-func (h *queryTestHandler) HandleEnquireLink(_ context.Context, _ *Session) (uint32, error) { return StatusOK, nil }
-func (h *queryTestHandler) HandleDeliverSMResp(_ context.Context, _, _ uint32, _ *Session) error { return nil }
+func (h *queryReplaceHandler) HandleReplaceSM(_ context.Context, params *ReplaceSmParams, _ *Session) (uint32, error) {
+	h.replaceCalled = true
+	h.lastMessageID = params.MessageID
+	h.lastSourceAddr = params.SourceAddr
+	return StatusOK, nil
+}
+func (h *queryReplaceHandler) HandleUnbind(_ context.Context, _ *Session) (uint32, error) {
+	return StatusOK, nil
+}
+func (h *queryReplaceHandler) HandleEnquireLink(_ context.Context, _ *Session) (uint32, error) {
+	return StatusOK, nil
+}
+func (h *queryReplaceHandler) HandleDeliverSMResp(_ context.Context, _, _ uint32, _ *Session) error {
+	return nil
+}
 
 func TestHandleQuerySM(t *testing.T) {
-	handler := &queryTestHandler{}
+	handler := &queryReplaceHandler{}
 	session := &Session{
 		ID:          "sess-query",
 		Bound:       true,
@@ -79,8 +93,54 @@ func TestHandleQuerySM(t *testing.T) {
 	}
 }
 
+func TestHandleReplaceSM(t *testing.T) {
+	handler := &queryReplaceHandler{}
+	session := &Session{
+		ID:          "sess-replace",
+		Bound:       true,
+		BindingType: BindingTypeTransmitter,
+		cfg:         newTestConfig(),
+		ctx:         context.Background(),
+		cancel:      func() {},
+		stopCh:      make(chan struct{}),
+		pduQueue:    make(chan pdu.Body, 8),
+		segmentsMgr: NewSegmentsManager(newTestLogger(), time.Minute, &stubIDGenerator{}, 10),
+		logger:      newTestLogger(),
+		handler:     handler,
+	}
+
+	// Test parseReplaceSM directly with a mock PDU
+	params := &ReplaceSmParams{
+		MessageID:     "msg456",
+		SourceAddr:    "79123456789",
+		SourceAddrTON: 1,
+		SourceAddrNPI: 1,
+		DestAddr:      "dest",
+		ShortMessage:  []byte("new text"),
+		SeqNum:        1,
+	}
+
+	// Call handler directly
+	status, err := handler.HandleReplaceSM(context.Background(), params, session)
+	if err != nil {
+		t.Fatalf("HandleReplaceSM returned error: %v", err)
+	}
+	if status != StatusOK {
+		t.Fatalf("expected status OK, got %d", status)
+	}
+	if !handler.replaceCalled {
+		t.Fatal("HandleReplaceSM was not called")
+	}
+	if handler.lastMessageID != "msg456" {
+		t.Fatalf("expected message_id=msg456, got %s", handler.lastMessageID)
+	}
+	if handler.lastSourceAddr != "79123456789" {
+		t.Fatalf("expected source_addr=79123456789, got %s", handler.lastSourceAddr)
+	}
+}
+
 func TestQuerySMRequiresBinding(t *testing.T) {
-	handler := &queryTestHandler{}
+	handler := &queryReplaceHandler{}
 	session := &Session{
 		ID:          "sess-query-bound",
 		Bound:       true,

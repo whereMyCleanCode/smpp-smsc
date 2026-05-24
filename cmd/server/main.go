@@ -102,6 +102,16 @@ func (h *demoHandler) HandleQuerySM(_ context.Context, params *smsc.QuerySmParam
 	}, smsc.StatusOK, nil
 }
 
+func (h *demoHandler) HandleReplaceSM(_ context.Context, params *smsc.ReplaceSmParams, session *smsc.Session) (uint32, error) {
+	h.lgr.Info().
+		Str("handler", "demo").
+		Str("event", "replace_sm").
+		Str("session_id", session.ID).
+		Str("message_id", params.MessageID).
+		Msg("mock handler")
+	return smsc.StatusOK, nil
+}
+
 func (h *demoHandler) HandleUnbind(_ context.Context, session *smsc.Session) (uint32, error) {
 	session.Bound = false
 	h.lgr.Info().

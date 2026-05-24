@@ -781,6 +781,15 @@ func (h *defaultSMPPHandler) HandleQuerySM(_ context.Context, params *QuerySmPar
 	}, StatusOK, nil
 }
 
+func (h *defaultSMPPHandler) HandleReplaceSM(_ context.Context, params *ReplaceSmParams, session *Session) (uint32, error) {
+	session.logger.Info().
+		Str("handler", "default_smpp").
+		Str("event", "replace_sm").
+		Str("message_id", params.MessageID).
+		Msg("mock handler")
+	return StatusOK, nil
+}
+
 func (h *defaultSMPPHandler) HandleUnbind(_ context.Context, session *Session) (uint32, error) {
 	session.Bound = false
 	session.logger.Info().

@@ -60,6 +60,15 @@ func (h *containerTestHandler) HandleQuerySM(_ context.Context, params *QuerySmP
 	}, StatusOK, nil
 }
 
+func (h *containerTestHandler) HandleReplaceSM(_ context.Context, params *ReplaceSmParams, session *Session) (uint32, error) {
+	session.logger.Info().
+		Str("handler", "container_test").
+		Str("event", "replace_sm").
+		Str("message_id", params.MessageID).
+		Msg("mock handler")
+	return StatusOK, nil
+}
+
 func (h *containerTestHandler) HandleUnbind(_ context.Context, session *Session) (uint32, error) {
 	session.logger.Info().
 		Str("handler", "container_test").
