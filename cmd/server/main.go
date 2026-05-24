@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -17,8 +18,15 @@ type demoHandler struct {
 }
 
 func (h *demoHandler) HandleBindTransceiver(_ context.Context, params map[string]string, session *smsc.Session) (uint32, error) {
-	session.SystemID = params["system_id"]
-	session.Password = params["password"]
+	id := params["system_id"]
+	pass := params["password"]
+
+	if len(pass) == 0 || len(id) == 0 {
+		return smsc.StatusInvBnd, errors.New("invalid params")
+	}
+
+	session.SystemID = id
+	session.Password = pass
 	session.BindingType = smsc.BindingTypeTransceiver
 	session.Bound = true
 	h.lgr.Info().
@@ -31,8 +39,15 @@ func (h *demoHandler) HandleBindTransceiver(_ context.Context, params map[string
 }
 
 func (h *demoHandler) HandleBindReceiver(_ context.Context, params map[string]string, session *smsc.Session) (uint32, error) {
-	session.SystemID = params["system_id"]
-	session.Password = params["password"]
+	id := params["system_id"]
+	pass := params["password"]
+
+	if len(pass) == 0 || len(id) == 0 {
+		return smsc.StatusInvBnd, errors.New("invalid params")
+	}
+
+	session.SystemID = id
+	session.Password = pass
 	session.BindingType = smsc.BindingTypeReceiver
 	session.Bound = true
 	h.lgr.Info().
@@ -45,8 +60,15 @@ func (h *demoHandler) HandleBindReceiver(_ context.Context, params map[string]st
 }
 
 func (h *demoHandler) HandleBindTransmitter(_ context.Context, params map[string]string, session *smsc.Session) (uint32, error) {
-	session.SystemID = params["system_id"]
-	session.Password = params["password"]
+	id := params["system_id"]
+	pass := params["password"]
+
+	if len(pass) == 0 || len(id) == 0 {
+		return smsc.StatusInvBnd, errors.New("invalid params")
+	}
+
+	session.SystemID = id
+	session.Password = pass
 	session.BindingType = smsc.BindingTypeTransmitter
 	session.Bound = true
 	h.lgr.Info().
